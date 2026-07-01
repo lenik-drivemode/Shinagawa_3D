@@ -131,8 +131,7 @@ class Camera:
         """Phase 7 hook: update marker position and heading each frame."""
         self._follow_pos     = np.asarray(pos, dtype=np.float64)
         self._follow_heading = float(heading)
-        if self.mode in ("follow_close", "follow_aerial"):
-            self.target = self._follow_pos.copy()
+        self.target = self._follow_pos.copy()   # all modes keep vehicle centred
 
     # ------------------------------------------------------------------
     # Mouse / keyboard input

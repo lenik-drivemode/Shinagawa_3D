@@ -262,3 +262,24 @@ def test_camera_pan_drag_changes_target(cfg):
     t0 = cam.target.copy()
     cam.pan_drag(50, 50)
     assert not np.allclose(cam.target, t0)
+
+
+def test_set_follow_target_moves_orbit_target(cfg):
+    """Orbit mode must track the vehicle so it stays centred on screen."""
+    cam = Camera(cfg)
+    assert cam.mode == "orbit"
+    pos = np.array([100.0, 0.0, 200.0])
+    cam.set_follow_target(pos, heading=0.0)
+    assert np.allclose(cam.target, pos)
+
+
+def test_set_follow_target_moves_target_in_all_modes(cfg):
+    """Target follows vehicle regardless of which mode is active."""
+    pos = np.array([50.0, 0.0, 75.0])
+    for _ in range(3):   # orbit → follow_close → follow_aerial
+        cam = Camera(cfg)
+        # Advance to mode i without calling set_follow_target yet
+        for _ in range(_):
+            cam.cycle_follow_mode()
+        cam.set_follow_target(pos, heading=1.0)
+        assert np.allclose(cam.target, pos), f"target not updated in mode {cam.mode}"
