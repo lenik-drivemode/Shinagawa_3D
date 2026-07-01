@@ -4,6 +4,28 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-02 — Phase 4: Building Mesh Generation
+
+### Added
+- `src/osm3d_poc/geo/preprocess_buildings.py` — building extrusion pipeline:
+  `parse_height` (OSM tag formats), `get_building_height` (priority: height tag
+  > building:levels × floor_h > default), `_clean_polygon` (shapely.make_valid),
+  `_extrude_building` (walls + flat roof via mapbox-earcut, CCW-oriented rings),
+  `build_building_mesh`, `save_building_mesh`
+- `scripts/02_preprocess_assets.py` extended for buildings: `--skip-buildings`
+  flag now functional; updates metadata.json with building counts
+- `tests/test_preprocess_buildings.py` — 46 tests: height parsing, height
+  priority chain, extrusion geometry (vertex count, index count, dtype, no NaN,
+  indices in range, Y range, roof/wall normals), polygon helpers, full pipeline,
+  save/roundtrip
+
+### Notes
+- Vertex format: float32 (x, y, z, nx, ny, nz); roof normals (0,1,0), wall
+  normals outward-horizontal via CCW-oriented Shapely exterior ring
+- Renderer should use abs(dot(normal, light)) for two-sided shading robustness
+- Polygon holes ignored (FR-BLDG-008, documented in README Known Limitations)
+- mapbox-earcut 2.0 API: takes (N,2) float64 array + ring-size uint32 array
+
 ## [0.4.0] — 2026-07-02 — Phase 3: Road Mesh Generation
 
 ### Added
