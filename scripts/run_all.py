@@ -25,12 +25,16 @@ _STEPS: Sequence[Tuple[str, str]] = (
 _REBUILD_SCRIPTS = {"02_preprocess_assets.py", "03_build_route.py"}
 
 
+_LONG_ROUTE_SCRIPTS = {"03_build_route.py", "04_run_viewer.py"}
+
+
 def build_cmds(
     config: str,
     small_bbox: bool,
     rebuild: bool,
     no_viewer: bool,
     scripts_dir: Path,
+    long_route: bool = False,
 ) -> List[Tuple[str, List[str]]]:
     """Return list of (script_name, command_list) for each pipeline step.
 
@@ -45,6 +49,8 @@ def build_cmds(
             cmd.append("--small-bbox")
         if rebuild and script in _REBUILD_SCRIPTS:
             cmd.append("--rebuild")
+        if long_route and script in _LONG_ROUTE_SCRIPTS:
+            cmd.append("--long-route")
         cmds.append((script, cmd))
     return cmds
 
@@ -54,13 +60,14 @@ def run_pipeline(
     small_bbox: bool = False,
     rebuild: bool = False,
     no_viewer: bool = False,
+    long_route: bool = False,
     scripts_dir: Path = None,
 ) -> bool:
     """Execute the pipeline. Return True on success, False on first failure."""
     if scripts_dir is None:
         scripts_dir = Path(__file__).parent.resolve()
 
-    steps = build_cmds(config, small_bbox, rebuild, no_viewer, scripts_dir)
+    steps = build_cmds(config, small_bbox, rebuild, no_viewer, scripts_dir, long_route)
     for script, cmd in steps:
         label = next(lbl for s, lbl in _STEPS if s == script)
         print(f"\n{'='*60}")
@@ -91,6 +98,8 @@ def _parse_args() -> argparse.Namespace:
                    help="Force rebuild of cached assets (passed to preprocess + route steps)")
     p.add_argument("--no-viewer",  action="store_true",
                    help="Run preprocessing only; skip launching the viewer")
+    p.add_argument("--long-route", action="store_true",
+                   help="Build and load the long route (~9 km) instead of the default short one")
     return p.parse_args()
 
 
@@ -101,6 +110,7 @@ def main() -> None:
         small_bbox=args.small_bbox,
         rebuild=args.rebuild,
         no_viewer=args.no_viewer,
+        long_route=args.long_route,
     )
     sys.exit(0 if ok else 1)
 

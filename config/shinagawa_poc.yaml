@@ -40,14 +40,23 @@ preprocess:
   simplify_tolerance_m: 0.25
 
 route:
-  output_file: "data/routes/shinagawa_loop.json"
+  output_file:      "data/routes/shinagawa_loop.json"
+  long_output_file: "data/routes/shinagawa_loop_long.json"
   desired_min_length_m: 4000
   desired_max_length_m: 5500
   default_speed_kmh: 40
   speed_min_kmh: 5
   speed_max_kmh: 200
   speed_step_kmh: 10
+  # Default short route (~4-5 km): Shinagawa → Sengakuji → Konan → return
   waypoints:
+    - {name: "Shinagawa Station",        lat: 35.6285, lon: 139.7388}
+    - {name: "Sengakuji",                lat: 35.6370, lon: 139.7380}
+    - {name: "Konan",                    lat: 35.6265, lon: 139.7475}
+    - {name: "Shinagawa Station return", lat: 35.6285, lon: 139.7388}
+
+  # Long route (~9 km, --long-route flag): adds Osaki/Gotanda southwest leg
+  long_waypoints:
     - {name: "Shinagawa Station",        lat: 35.6285, lon: 139.7388}
     - {name: "Sengakuji",                lat: 35.6370, lon: 139.7380}
     - {name: "Konan",                    lat: 35.6265, lon: 139.7475}

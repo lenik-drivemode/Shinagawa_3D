@@ -10,7 +10,7 @@ import pytest
 _SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from run_all import build_cmds, _REBUILD_SCRIPTS  # noqa: E402
+from run_all import build_cmds, _REBUILD_SCRIPTS, _LONG_ROUTE_SCRIPTS  # noqa: E402
 
 
 _FAKE_DIR = Path("/fake/scripts")
@@ -94,6 +94,25 @@ def test_rebuild_false_not_in_any_cmd():
     cmds = build_cmds(_DEFAULT_CONFIG, False, False, False, _FAKE_DIR)
     for _, cmd in cmds:
         assert "--rebuild" not in cmd
+
+
+# ---------------------------------------------------------------------------
+# build_cmds: --long-route propagation
+# ---------------------------------------------------------------------------
+
+def test_long_route_only_on_long_route_scripts():
+    cmds = build_cmds(_DEFAULT_CONFIG, False, False, False, _FAKE_DIR, long_route=True)
+    for name, cmd in cmds:
+        if name in _LONG_ROUTE_SCRIPTS:
+            assert "--long-route" in cmd, f"Expected --long-route in {name}"
+        else:
+            assert "--long-route" not in cmd, f"Unexpected --long-route in {name}"
+
+
+def test_long_route_false_not_in_any_cmd():
+    cmds = build_cmds(_DEFAULT_CONFIG, False, False, False, _FAKE_DIR, long_route=False)
+    for _, cmd in cmds:
+        assert "--long-route" not in cmd
 
 
 # ---------------------------------------------------------------------------

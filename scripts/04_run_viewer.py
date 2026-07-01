@@ -25,8 +25,10 @@ def _parse_args() -> argparse.Namespace:
                    help="Start in top-down camera mode")
     p.add_argument("--follow",     action="store_true",
                    help="Start in close-follow camera mode")
+    p.add_argument("--long-route", action="store_true",
+                   help="Load the long route (~9 km) from route.long_output_file")
     p.add_argument("--speed-kmh",  type=float, default=None, metavar="KMH",
-                   help="Override vehicle simulation speed in km/h (Phase 7)")
+                   help="Override vehicle simulation speed in km/h")
     p.add_argument("--small-bbox", action="store_true",
                    help="Use smaller debug bounding box")
     p.add_argument("--show-stats", action="store_true",
@@ -61,6 +63,8 @@ def main() -> None:
                          len(d["vertices"]), len(d["indices"]) // 3)
 
     # Apply CLI overrides to cfg
+    if args.long_route:
+        cfg.setdefault("route", {})["output_file"] = cfg["route"]["long_output_file"]
     if args.speed_kmh is not None:
         cfg.setdefault("route", {})["default_speed_kmh"] = args.speed_kmh
 

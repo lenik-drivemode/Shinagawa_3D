@@ -20,6 +20,9 @@ def main() -> None:
     p.add_argument("--config",     default="config/shinagawa_poc.yaml", metavar="PATH")
     p.add_argument("--small-bbox", action="store_true",
                    help="Use smaller debug bounding box")
+    p.add_argument("--long-route", action="store_true",
+                   help="Build the long route (~9 km) using long_waypoints; "
+                        "saves to route.long_output_file")
     p.add_argument("--rebuild",    action="store_true",
                    help="Rebuild route even if output file already exists")
     args = p.parse_args()
@@ -28,7 +31,11 @@ def main() -> None:
     setup_logging(cfg.get("logging", {}).get("level", "INFO"))
     log = logging.getLogger(__name__)
 
-    out_path = Path(cfg["route"]["output_file"])
+    if args.long_route:
+        out_path = Path(cfg["route"]["long_output_file"])
+    else:
+        out_path = Path(cfg["route"]["output_file"])
+
     if out_path.exists() and not args.rebuild:
         log.info("Route already exists at %s; skipping (use --rebuild to force).", out_path)
         return
@@ -41,9 +48,14 @@ def main() -> None:
     log.info("Projector origin: easting=%.1f  northing=%.1f",
              projector.origin_easting, projector.origin_northing)
 
-    # Use debug_waypoints when running with --small-bbox so all points are inside the graph
-    route_cfg = dict(cfg)
-    if args.small_bbox and "debug_waypoints" in cfg.get("route", {}):
+    # Select waypoint set: long_waypoints > debug_waypoints > waypoints
+    route_cfg = cfg
+    if args.long_route and "long_waypoints" in cfg.get("route", {}):
+        route_cfg = {**cfg, "route": {**cfg["route"],
+                     "waypoints":   cfg["route"]["long_waypoints"],
+                     "output_file": cfg["route"]["long_output_file"]}}
+        log.info("Using long_waypoints (%d points).", len(cfg["route"]["long_waypoints"]))
+    elif args.small_bbox and "debug_waypoints" in cfg.get("route", {}):
         route_cfg = {**cfg, "route": {**cfg["route"], "waypoints": cfg["route"]["debug_waypoints"]}}
         log.info("Using debug_waypoints (%d points) for small-bbox run.",
                  len(cfg["route"]["debug_waypoints"]))
@@ -55,7 +67,7 @@ def main() -> None:
         _save_diagnostics(route_cfg, G, args.small_bbox)
         sys.exit(1)
 
-    route_path = save_route(route_dict, cfg)
+    route_path = save_route(route_dict, route_cfg)
     _update_metadata(cfg, route_dict, route_path)
     log.info("=== Phase 5 complete — route saved to %s ===", route_path)
 
