@@ -23,8 +23,13 @@ from .mesh import GpuMesh
 from .marker import make_marker_mesh
 from ..geo.preprocess_roads import polyline_to_strip
 from ..geo.route_builder import load_route
+from ..sim.route_player import RoutePlayer
 
 log = logging.getLogger(__name__)
+
+# Raw ASCII codes for [ and ] — safe on all moderngl-window backends.
+_KEY_BRACKET_L = 91   # [
+_KEY_BRACKET_R = 93   # ]
 
 
 class Renderer(mglw.WindowConfig):
@@ -59,23 +64,31 @@ class Renderer(mglw.WindowConfig):
         self._building_prog = self.ctx.program(vertex_shader=BUILDING_VERT, fragment_shader=BUILDING_FRAG)
 
         # GPU meshes (None if asset not available)
-        self._road_mesh:    Optional[GpuMesh] = None
-        self._route_mesh:   Optional[GpuMesh] = None
+        self._road_mesh:     Optional[GpuMesh] = None
+        self._route_mesh:    Optional[GpuMesh] = None
         self._building_mesh: Optional[GpuMesh] = None
-        self._marker_mesh:  Optional[GpuMesh] = None
+        self._marker_mesh:   Optional[GpuMesh] = None
 
-        # Route arrays (for marker position in Phase 6, animation in Phase 7)
+        # Route arrays + simulation player
         self._route_xyz: Optional[np.ndarray] = None
         self._route_s:   Optional[np.ndarray] = None
+        self._player:    Optional[RoutePlayer] = None
 
         self._load_assets(cfg)
 
         self._camera = Camera(cfg)
         self._camera.target = self._scene_center()
 
-        # FPS tracking
-        self._fps_frames = 0
-        self._fps_acc    = 0.0
+        # Apply CLI camera-mode flags
+        if self._cli_args and getattr(self._cli_args, "follow", False):
+            self._camera.cycle_follow_mode()        # orbit → follow_close
+        if self._cli_args and getattr(self._cli_args, "top_down", False):
+            self._camera.toggle_top_down()
+
+        # FPS / progress tracking
+        self._fps_frames   = 0
+        self._fps_acc      = 0.0
+        self._progress_acc = 0.0
 
         bg = cfg["render"]["background_color"]
         self._bg = tuple(bg[:4] if len(bg) >= 4 else (*bg, 1.0))
@@ -87,14 +100,18 @@ class Renderer(mglw.WindowConfig):
         self._marker_color   = _vec4(r["marker_color"])
         self._marker_y       = float(cfg["preprocess"]["marker_y_m"])
 
-        log.info("Renderer ready (GL %s).", self.ctx.version_code)
+        log.info(
+            "Renderer ready (GL %s). Controls: WASD=move F=follow T=top-down "
+            "Space=pause R=reset [/]=speed Esc=quit",
+            self.ctx.version_code,
+        )
 
     # ------------------------------------------------------------------
     # Asset loading
     # ------------------------------------------------------------------
 
     def _load_assets(self, cfg: dict) -> None:
-        out_dir = Path(cfg["preprocess"]["output_dir"])
+        out_dir   = Path(cfg["preprocess"]["output_dir"])
         skip_bldg = self._cli_args and getattr(self._cli_args, "no_buildings", False)
 
         # Roads
@@ -126,11 +143,11 @@ class Renderer(mglw.WindowConfig):
             else:
                 log.warning("buildings_mesh.npz not found — run 02_preprocess_assets.py first.")
 
-        # Route + route strip + marker
+        # Route + route strip + marker + player
         route_path = Path(cfg["route"]["output_file"])
         if route_path.exists():
             self._route_xyz, self._route_s = load_route(cfg)
-            xz = self._route_xyz[:, [0, 2]]
+            xz      = self._route_xyz[:, [0, 2]]
             route_y = float(self._route_xyz[0, 1])
             route_verts, route_idxs = polyline_to_strip(xz, width=3.5, y=route_y)
             if len(route_verts):
@@ -149,11 +166,15 @@ class Renderer(mglw.WindowConfig):
                 marker_verts, marker_idxs,
                 "3f", "in_position",
             )
+
+            # RoutePlayer starts running immediately (FR-SIM-000)
+            speed_mps = cfg["route"]["default_speed_kmh"] / 3.6
+            self._player = RoutePlayer(self._route_xyz, self._route_s, speed_mps)
+            log.info("RoutePlayer ready: %.0f km/h.", self._player.speed_kmh)
         else:
             log.warning("Route file not found — run 03_build_route.py first.")
 
     def _scene_center(self) -> np.ndarray:
-        """Estimate the scene centre for initial camera target."""
         if self._route_xyz is not None:
             midpoint = (self._route_xyz.max(axis=0) + self._route_xyz.min(axis=0)) * 0.5
             return midpoint.astype(np.float64)
@@ -166,17 +187,35 @@ class Renderer(mglw.WindowConfig):
     def render(self, time: float, frame_time: float) -> None:
         self.ctx.clear(*self._bg)
 
-        w, h  = self.wnd.size
-        aspect = w / h if h > 0 else 1.0
+        # --- Simulation tick ---
+        pos     = self._route_xyz[0] if self._route_xyz is not None else np.zeros(3, np.float32)
+        heading = 0.0
+        if self._player is not None:
+            self._player.update(frame_time)
+            pos, heading = self._player.get_pose()
+            self._camera.set_follow_target(pos, heading)
 
-        proj = self._camera.get_projection_matrix(aspect)
-        view = self._camera.get_view_matrix()
-        vp   = proj @ view   # model = identity for static world geometry
+        # --- Progress log every 5 s (FR-UI-002) ---
+        self._progress_acc += frame_time
+        if self._progress_acc >= 5.0:
+            self._progress_acc = 0.0
+            if self._player is not None:
+                log.info(
+                    "Route %.0f / %.0f m | %.0f km/h | %s",
+                    self._player.dist_m, self._player.total_m,
+                    self._player.speed_kmh,
+                    "PAUSED" if self._player.paused else "running",
+                )
+
+        w, h   = self.wnd.size
+        aspect = w / h if h > 0 else 1.0
+        proj   = self._camera.get_projection_matrix(aspect)
+        view   = self._camera.get_view_matrix()
+        vp     = proj @ view   # world geometry uses identity model
 
         # --- Roads ---
         if self._road_mesh is not None:
-            mvp = _mvp_bytes(vp)
-            self._flat_prog["mvp"].write(mvp)
+            self._flat_prog["mvp"].write(_mvp_bytes(vp))
             self._flat_prog["color"].write(self._road_color)
             self._road_mesh.draw()
 
@@ -192,23 +231,25 @@ class Renderer(mglw.WindowConfig):
             self._building_prog["color"].write(self._building_color)
             self._building_mesh.draw()
 
-        # --- Marker (Phase 6: static at route[0]; Phase 7: animated) ---
-        if self._marker_mesh is not None and self._route_xyz is not None:
-            pos     = self._route_xyz[0]
-            heading = 0.0   # replaced by RoutePlayer.get_pose()[1] in Phase 7
-            model   = translate(float(pos[0]), self._marker_y, float(pos[2])) @ rotate_y(heading)
-            mvp     = _mvp_bytes(proj @ view @ model)
-            self._flat_prog["mvp"].write(mvp)
+        # --- Animated marker ---
+        if self._marker_mesh is not None:
+            model = translate(float(pos[0]), self._marker_y, float(pos[2])) @ rotate_y(heading)
+            self._flat_prog["mvp"].write(_mvp_bytes(proj @ view @ model))
             self._flat_prog["color"].write(self._marker_color)
             self._marker_mesh.draw()
 
-        # --- FPS in window title ---
+        # --- FPS / state in window title (every 0.5 s) ---
         self._fps_frames += 1
         self._fps_acc    += frame_time
         if self._fps_acc >= 0.5:
-            fps = self._fps_frames / self._fps_acc
+            fps      = self._fps_frames / self._fps_acc
             mode_str = self._camera.mode
-            self.wnd.title = f"Shinagawa 3D | {fps:.0f} FPS | {mode_str}"
+            if self._player is not None:
+                spd_str   = f" | {self._player.speed_kmh:.0f} km/h"
+                state_str = " | PAUSED" if self._player.paused else ""
+            else:
+                spd_str = state_str = ""
+            self.wnd.title = f"Shinagawa 3D | {fps:.0f} FPS | {mode_str}{spd_str}{state_str}"
             self._fps_frames = 0
             self._fps_acc    = 0.0
 
@@ -223,15 +264,40 @@ class Renderer(mglw.WindowConfig):
         keys = self.wnd.keys
         if action != keys.ACTION_PRESS:
             return
+
         if key == keys.ESCAPE:
             self.wnd.close()
-        elif key == keys.T:
+            return
+
+        # Camera mode
+        if key == keys.T:
             self._camera.toggle_top_down()
             log.info("Camera mode: %s", self._camera.mode)
-        elif key == keys.F:
+            return
+        if key == keys.F:
             self._camera.cycle_follow_mode()
             log.info("Camera mode: %s", self._camera.mode)
-        # W/S/A/D: camera movement
+            return
+
+        # Simulation controls
+        if key == keys.SPACE and self._player is not None:
+            self._player.toggle_pause()
+            log.info("Simulation %s", "PAUSED" if self._player.paused else "running")
+            return
+        if key == keys.R and self._player is not None:
+            self._player.reset()
+            log.info("Simulation reset to route origin")
+            return
+        if key == _KEY_BRACKET_L and self._player is not None:
+            self._player.speed_kmh -= 10
+            log.info("Speed: %.0f km/h", self._player.speed_kmh)
+            return
+        if key == _KEY_BRACKET_R and self._player is not None:
+            self._player.speed_kmh += 10
+            log.info("Speed: %.0f km/h", self._player.speed_kmh)
+            return
+
+        # Camera target movement
         move_speed = self._camera.distance * 0.05
         if key == keys.W:
             self._camera.move_forward( move_speed)
