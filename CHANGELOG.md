@@ -4,6 +4,37 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-02 — Phase 6: Renderer MVP
+
+### Added
+- `src/osm3d_poc/render/camera.py` — Camera class + standalone matrix functions
+  (`look_at`, `perspective`, `ortho`, `translate`, `rotate_y`); orbit / top-down /
+  follow-close / follow-aerial modes; mouse orbit/pan, scroll zoom, W/S/A/D
+  movement; F cycles follow modes, T toggles top-down orthographic view
+- `src/osm3d_poc/render/shaders.py` — GLSL sources: `FLAT_VERT`/`FLAT_FRAG`
+  (roads, route, marker) + `BUILDING_VERT`/`BUILDING_FRAG` (diffuse, abs-dot for
+  two-sided normals, hardcoded sun direction)
+- `src/osm3d_poc/render/mesh.py` — `GpuMesh` wrapper (VBO+IBO→VAO, one draw call)
+- `src/osm3d_poc/render/marker.py` — `make_marker_mesh`: 8-vertex cuboid in
+  marker-local space (±width/2 in X, [0, height] in Y, ±length/2 in Z); 36 indices
+- `src/osm3d_poc/render/renderer.py` — `Renderer(mglw.WindowConfig)`: loads roads/
+  buildings/route .npz + JSON, uploads all to GPU, draws in order (roads → route →
+  buildings → marker), FPS+mode in window title every 0.5s, keyboard/mouse handlers;
+  `run_viewer(cfg, cli_args)` entry point; graceful warnings when assets missing
+- `scripts/04_run_viewer.py` updated to call `run_viewer` (was "not yet implemented")
+- `tests/test_camera.py` — 29 tests: look_at (shape, dtype, eye→origin, target→-Z,
+  up alignment), perspective (shape, dtype, w-component, FOV/aspect scaling), ortho
+  (centre, corners), translate, rotate_y, Camera mode cycling/clamping/matrix shapes
+- `tests/test_marker.py` — 11 tests: vertex/index count, dtype, indices in range,
+  no NaN, X/Z symmetry, Y range, vertex shape, real config round-trip
+
+### Notes
+- `rotate_y(+π/2)` maps +X → -Z (right-hand rule) — used in marker heading transform
+- Marker model matrix: `translate(x, marker_y_m, z) @ rotate_y(heading)`; heading=0
+  in Phase 6 (static); Phase 7 RoutePlayer provides actual heading each frame
+- Building shader uses `abs(dot(normal, light))` for two-sided diffuse (PRD note)
+- Renderer gracefully skips missing .npz/route files with log warnings
+
 ## [0.6.0] — 2026-07-02 — Phase 5: Route Generation
 
 ### Added
