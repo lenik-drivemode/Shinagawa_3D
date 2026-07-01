@@ -1,0 +1,14 @@
+numpy>=1.24,<3
+pyproj>=3.6
+shapely>=2.0
+geopandas>=0.14
+networkx>=3.2
+osmnx>=1.9
+moderngl>=5.10
+moderngl-window>=2.4
+pyglet>=2.0
+pyyaml>=6.0
+orjson>=3.9
+rtree>=1.0
+mapbox-earcut>=1.0
+pytest>=7.0

@@ -1,0 +1,78 @@
+area:
+  name: "Tokyo Shinagawa PoC"
+  bbox:
+    north: 35.6420
+    south: 35.6150
+    east:  139.7600
+    west:  139.7150
+  center:
+    lat: 35.6285
+    lon: 139.7388
+
+  # Smaller bounding box for faster debug runs (--small-bbox flag)
+  debug_bbox:
+    north: 35.6350
+    south: 35.6220
+    east:  139.7500
+    west:  139.7270
+
+projection:
+  source_epsg: 4326
+  target_epsg: 32654
+  local_origin: "bbox_center"
+
+osm:
+  use_cache: true
+  cache_dir: "data/raw"
+  network_type: "drive"
+  building_tags:
+    building: true
+
+preprocess:
+  output_dir: "data/processed/shinagawa"
+  default_building_height_m: 9.0
+  floor_height_m: 3.0
+  max_building_height_m: 250.0
+  road_y_m:    0.02
+  route_y_m:   0.08
+  marker_y_m:  0.20
+  simplify_roads: true
+  simplify_tolerance_m: 0.25
+
+route:
+  output_file: "data/routes/shinagawa_loop.json"
+  desired_min_length_m: 4000
+  desired_max_length_m: 5500
+  default_speed_kmh: 40
+  speed_min_kmh: 5
+  speed_max_kmh: 200
+  speed_step_kmh: 10
+  waypoints:
+    - {name: "Shinagawa Station",        lat: 35.6285, lon: 139.7388}
+    - {name: "Sengakuji",                lat: 35.6370, lon: 139.7380}
+    - {name: "Konan",                    lat: 35.6265, lon: 139.7475}
+    - {name: "Osaki/Gotanda side",       lat: 35.6200, lon: 139.7285}
+    - {name: "Shinagawa Station return", lat: 35.6285, lon: 139.7388}
+
+render:
+  window_width:  1280
+  window_height: 720
+  target_fps: 60
+  background_color: [0.08, 0.09, 0.10, 1.0]
+  road_color:       [0.22, 0.22, 0.22, 1.0]
+  route_color:      [1.00, 0.55, 0.05, 1.0]
+  building_color:   [0.50, 0.53, 0.56, 1.0]
+  marker_color:     [0.10, 0.60, 1.00, 1.0]
+  marker_length_m: 8.0
+  marker_width_m:  4.0
+  marker_height_m: 2.0
+  camera_mode: "orbit"
+  initial_camera_height_m: 1200
+  initial_pitch_deg: 45
+  initial_yaw_deg: 0
+  follow_close_back_m: 25
+  follow_close_up_m:   12
+  follow_aerial_up_m: 120
+
+logging:
+  level: "INFO"

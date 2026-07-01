@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# OSM/processed data (large, generated)
+data/raw/*
+data/processed/*
+data/routes/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/routes/.gitkeep
+
+# OSMnx cache
+cache/
