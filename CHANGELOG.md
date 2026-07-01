@@ -4,6 +4,26 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-02 — Phase 3: Road Mesh Generation
+
+### Added
+- `src/osm3d_poc/geo/preprocess_roads.py` — road strip mesh pipeline:
+  `parse_width`, `highway_width`, `get_edge_width` (OSM tag → fallback table),
+  `polyline_to_strip` (per-segment quads, MVP corner gaps accepted per FR-ROAD-006),
+  `build_road_mesh` (whole graph → single combined mesh), `save_road_mesh` (.npz + .json)
+- `scripts/02_preprocess_assets.py` — CLI: `--config`, `--small-bbox`,
+  `--skip-buildings`, `--rebuild`; updates metadata.json with road counts
+  and projection origin
+- `tests/test_preprocess_roads.py` — 47 tests: width parsing, highway fallback
+  table, edge-width clamping, strip geometry (quad counts, axis directions,
+  Y value, dtype), mesh validity (no NaN, all indices in range), roundtrip save
+
+### Notes
+- Vertex format: float32 (x, y, z); uniform road color is set by renderer
+  shader — per-vertex color is post-MVP
+- Degenerate segments (length < 1e-6 m) are silently skipped
+- Width out-of-range (< 1 m or > 50 m) falls back to highway-type default
+
 ## [0.3.0] — 2026-07-02 — Phase 2: Projection & Local Coordinates
 
 ### Added
