@@ -78,7 +78,7 @@ render:
   background_color: [0.40, 0.58, 0.80, 1.0]   # sky blue
   ground_color:     [0.45, 0.56, 0.40, 1.0]   # saturated grey-green
   road_color:       [0.96, 0.94, 0.88, 1.0]   # near-white (high contrast vs green ground)
-  route_color:      [1.00, 0.35, 0.00, 1.0]   # vivid orange-red
+  route_color:      [1.00, 0.35, 0.00, 0.70]  # vivid orange-red, 70% opaque
   building_color:   [0.15, 0.25, 0.60, 0.72]  # semi-transparent dark blue
   marker_color:     [0.00, 1.00, 0.50, 1.0]   # bright cyan-green
   route_strip_width_m: 8.0
@@ -89,9 +89,10 @@ render:
   initial_camera_height_m: 600
   initial_pitch_deg: 45
   initial_yaw_deg: 0
-  follow_close_back_m: 25
-  follow_close_up_m:   12
-  follow_aerial_up_m: 120
+  follow_close_back_m: 50
+  follow_close_up_m:   24
+  follow_aerial_up_m:  120
+  follow_aerial_back_m: 50
 
 logging:
   level: "INFO"

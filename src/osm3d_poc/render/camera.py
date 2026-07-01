@@ -106,6 +106,7 @@ class Camera:
         self._follow_back_m  = float(r["follow_close_back_m"])
         self._follow_up_m    = float(r["follow_close_up_m"])
         self._aerial_up_m    = float(r["follow_aerial_up_m"])
+        self._aerial_back_m  = float(r.get("follow_aerial_back_m", 0.0))
 
         self._follow_pos     = np.zeros(3, dtype=np.float64)
         self._follow_heading = 0.0
@@ -207,10 +208,9 @@ class Camera:
             # look toward the marker position
             return look_at(eye, pos, up)
         else:   # follow_aerial
-            eye = pos + np.array([0.0, self._aerial_up_m, 0.0])
-            # up must not be parallel to the view direction (0,-1,0); use vehicle
-            # forward so the map orients with the direction of travel.
-            fwd = np.array([np.sin(h), 0.0, np.cos(h)])
+            back = np.array([-np.sin(h), 0.0, -np.cos(h)]) * self._aerial_back_m
+            eye  = pos + back + np.array([0.0, self._aerial_up_m, 0.0])
+            fwd  = np.array([np.sin(h), 0.0, np.cos(h)])
             return look_at(eye, pos, fwd)
 
     def get_projection_matrix(self, aspect: float) -> np.ndarray:

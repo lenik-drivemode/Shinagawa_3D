@@ -256,11 +256,14 @@ class Renderer(mglw.WindowConfig):
             self._flat_prog["color"].write(self._road_color)
             self._road_mesh.draw()
 
-        # --- Route highlight ---
+        # --- Route highlight (semi-transparent) ---
         if self._route_mesh is not None:
+            self.ctx.enable(moderngl.BLEND)
+            self.ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
             self._flat_prog["mvp"].write(_mvp_bytes(vp))
             self._flat_prog["color"].write(self._route_color)
             self._route_mesh.draw()
+            self.ctx.disable(moderngl.BLEND)
 
         # --- Buildings (semi-transparent: blend over already-drawn roads/ground) ---
         if self._building_mesh is not None:
