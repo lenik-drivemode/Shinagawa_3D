@@ -92,15 +92,21 @@ def polyline_to_strip(
     width: float,
     y: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Convert a 2-D polyline in local XZ to a flat road-strip mesh.
+    """Convert a 2-D polyline in local XZ to a flat road-strip mesh with miter joins.
 
-    For each consecutive segment pair (p_i, p_{i+1}):
-      - compute the perpendicular (CCW rotation of the direction vector)
-      - place four vertices at ±half_width offsets on each side
-      - emit two triangles per quad
+    Builds a continuous strip where adjacent quads share vertices at each
+    intermediate point.  At corners the shared vertex is placed at the miter
+    intersection of the two edge lines, which eliminates gaps.  Miter length is
+    capped at 3× half-width to prevent extreme spikes at very sharp corners.
 
-    MVP note (FR-ROAD-006): adjacent quads share no vertices, so sharp
-    corners produce visible gaps/overlaps.  This is accepted for PoC.
+    Vertex layout (even = left, odd = right):
+        0,1 — start pair
+        2,3 — second pair (shared between segments 0 and 1)
+        …
+        2*(N-1), 2*(N-1)+1 — end pair
+
+    Triangles per segment i: (L_i, R_{i+1}, R_i) and (L_i, L_{i+1}, R_{i+1})
+    — CCW when viewed from above (+Y).
 
     Args:
         xz:    (N, 2) float array of local (x, z) coordinates.
@@ -108,44 +114,59 @@ def polyline_to_strip(
         y:     world Y for all vertices (road_y_m from config).
 
     Returns:
-        vertices: float32 (4*(N-1), 3)
+        vertices: float32 (2*N, 3)
         indices:  uint32  (6*(N-1),)
     """
-    n = len(xz)
-    if n < 2:
+    # Drop consecutive duplicate points that would produce degenerate segments.
+    pts: List[np.ndarray] = [xz[0]]
+    for pt in xz[1:]:
+        if np.hypot(pt[0] - pts[-1][0], pt[1] - pts[-1][1]) >= 1e-6:
+            pts.append(pt)
+    if len(pts) < 2:
         return np.empty((0, 3), dtype=np.float32), np.empty(0, dtype=np.uint32)
 
+    n = len(pts)
     half = width * 0.5
-    all_verts: List[np.ndarray] = []
-    all_idxs:  List[np.ndarray] = []
-    base = 0
+    _MAX_MITER = 3.0   # cap as multiple of half_width
 
+    # Per-segment perpendicular (left-side = CCW rotation of direction).
+    perps: List[np.ndarray] = []
     for i in range(n - 1):
-        p0, p1 = xz[i], xz[i + 1]
-        d = p1 - p0
-        seg_len = np.hypot(d[0], d[1])
-        if seg_len < 1e-6:
-            continue                    # degenerate segment — skip
-        d /= seg_len
-        # Perpendicular: CCW rotation of (dx, dz) → (-dz, dx)
-        perp = np.array([-d[1], d[0]])
+        d = pts[i + 1] - pts[i]
+        d = d / np.hypot(d[0], d[1])
+        perps.append(np.array([-d[1], d[0]]))
 
-        v0 = [p0[0] + perp[0] * half, y, p0[1] + perp[1] * half]
-        v1 = [p0[0] - perp[0] * half, y, p0[1] - perp[1] * half]
-        v2 = [p1[0] - perp[0] * half, y, p1[1] - perp[1] * half]
-        v3 = [p1[0] + perp[0] * half, y, p1[1] + perp[1] * half]
+    # Build one (left, right) pair per polyline vertex.
+    verts: List[list] = []
+    for i in range(n):
+        if i == 0:
+            mdir, scale = perps[0], half
+        elif i == n - 1:
+            mdir, scale = perps[-1], half
+        else:
+            avg = perps[i - 1] + perps[i]
+            avg_len = float(np.hypot(avg[0], avg[1]))
+            if avg_len < 1e-6:              # 180° hairpin — use previous perp
+                mdir, scale = perps[i - 1], half
+            else:
+                avg /= avg_len
+                cos_h = float(np.dot(avg, perps[i - 1]))
+                scale = half / max(cos_h, 1.0 / _MAX_MITER)
+                mdir = avg
+        x, z = pts[i]
+        verts.append([x + mdir[0] * scale, y, z + mdir[1] * scale])  # left
+        verts.append([x - mdir[0] * scale, y, z - mdir[1] * scale])  # right
 
-        all_verts.extend([v0, v1, v2, v3])
-        # CCW winding when viewed from +Y (camera above): v0,v2,v1 and v0,v3,v2
-        all_idxs.append([base, base+2, base+1, base, base+3, base+2])
-        base += 4
-
-    if not all_verts:
-        return np.empty((0, 3), dtype=np.float32), np.empty(0, dtype=np.uint32)
+    # Triangles: CCW from above — (L0, R1, R0) and (L0, L1, R1) per segment.
+    idxs: List[int] = []
+    for i in range(n - 1):
+        l0, r0 = 2 * i,     2 * i + 1
+        l1, r1 = 2 * i + 2, 2 * i + 3
+        idxs.extend([l0, r1, r0, l0, l1, r1])
 
     return (
-        np.array(all_verts, dtype=np.float32),
-        np.array(all_idxs, dtype=np.uint32).ravel(),
+        np.array(verts, dtype=np.float32),
+        np.array(idxs,  dtype=np.uint32),
     )
 
 

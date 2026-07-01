@@ -121,7 +121,8 @@ def test_strip_two_points_produces_one_quad():
 def test_strip_three_points_produces_two_quads():
     xz = np.array([[0.0, 0.0], [0.0, 50.0], [0.0, 100.0]])
     verts, idxs = polyline_to_strip(xz, width=6.0, y=0.0)
-    assert verts.shape == (8, 3)
+    # Continuous strip: 3 points × 2 verts = 6; 2 segments × 6 indices = 12
+    assert verts.shape == (6, 3)
     assert idxs.shape == (12,)
 
 
@@ -170,6 +171,47 @@ def test_strip_dtype_is_float32_and_uint32():
     verts, idxs = polyline_to_strip(xz, width=4.0)
     assert verts.dtype == np.float32
     assert idxs.dtype == np.uint32
+
+
+def test_strip_n_points_produces_2n_verts():
+    """Continuous strip: every polyline vertex contributes exactly 2 mesh vertices."""
+    for n in range(2, 8):
+        xz = np.column_stack([np.zeros(n), np.linspace(0, 100, n)])
+        verts, idxs = polyline_to_strip(xz, width=5.0)
+        assert verts.shape == (2 * n, 3), f"n={n}: expected {2*n} verts, got {verts.shape[0]}"
+        assert idxs.shape == (6 * (n - 1),)
+
+
+def test_strip_no_gap_at_corner():
+    """The boundary vertices between adjacent segments must be identical (no gap)."""
+    # 90-degree corner: going north then east
+    xz = np.array([[0.0, 0.0], [0.0, 50.0], [50.0, 50.0]])
+    verts, idxs = polyline_to_strip(xz, width=6.0, y=0.0)
+    # Segment 0 ends at indices 2,3; segment 1 starts at indices 2,3 — same vertices.
+    # Verify by checking the index sets used for each segment.
+    seg0_idxs = set(idxs[:6].tolist())
+    seg1_idxs = set(idxs[6:].tolist())
+    shared = seg0_idxs & seg1_idxs
+    assert len(shared) == 2, f"Expected 2 shared boundary vertices, got {shared}"
+
+
+def test_strip_miter_at_90deg_corner():
+    """At a 90° corner the miter extends the junction by sqrt(2)× half-width."""
+    half = 3.0
+    xz = np.array([[0.0, 0.0], [0.0, 50.0], [50.0, 50.0]])
+    verts, _ = polyline_to_strip(xz, width=2 * half, y=0.0)
+    # Intermediate vertex pair is at indices 2 and 3 (x,y=0,z components)
+    # Segment 0: going +Z, perp = (-1, 0); segment 1: going +X, perp = (0, 1)
+    # Miter dir = (-0.707, 0.707), scale = half / cos(45°) = half * sqrt(2)
+    mid_left  = verts[2]   # [x, 0, z]
+    mid_right = verts[3]
+    expected_scale = half * np.sqrt(2)
+    # Distance from the corner point (0, 0, 50) to each boundary vertex
+    corner = np.array([0.0, 0.0, 50.0])
+    dist_left  = float(np.linalg.norm(mid_left  - corner))
+    dist_right = float(np.linalg.norm(mid_right - corner))
+    assert pytest.approx(dist_left,  abs=1e-4) == expected_scale
+    assert pytest.approx(dist_right, abs=1e-4) == expected_scale
 
 
 # ---------------------------------------------------------------------------
