@@ -118,6 +118,54 @@ def compute_cumulative_s(xz: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# Edge-geometry extraction
+# ---------------------------------------------------------------------------
+
+def _collect_path_latlons(G, node_path: List) -> np.ndarray:
+    """Walk node_path edge-by-edge and collect the full lat/lon sequence.
+
+    Uses each edge's LineString geometry when present (curved roads), otherwise
+    falls back to a straight line between the two endpoint nodes.  Adjacent
+    segments share their join point so no duplicates are introduced.
+    """
+    segments: List[np.ndarray] = []
+    for i in range(len(node_path) - 1):
+        u, v = node_path[i], node_path[i + 1]
+
+        # Pick the shortest-length parallel edge (multigraph).
+        best_data: Optional[dict] = None
+        best_len = float("inf")
+        for data in G[u][v].values():
+            l = data.get("length", float("inf"))
+            if l < best_len:
+                best_len = l
+                best_data = data
+
+        geom = best_data.get("geometry") if best_data else None
+        if geom is not None:
+            coords = np.array(geom.coords)   # shape (K, 2): lon, lat
+            seg = coords[:, ::-1]             # → lat, lon
+            # osmnx stores geometry from u to v for directed edges; verify
+            # by checking which end is closer to node u.
+            u_ll = np.array([G.nodes[u]["y"], G.nodes[u]["x"]])
+            if np.linalg.norm(seg[0] - u_ll) > np.linalg.norm(seg[-1] - u_ll):
+                seg = seg[::-1]
+        else:
+            seg = np.array([
+                [G.nodes[u]["y"], G.nodes[u]["x"]],
+                [G.nodes[v]["y"], G.nodes[v]["x"]],
+            ])
+
+        # Skip the first point of every segment after the first (already
+        # appended as the last point of the previous segment).
+        segments.append(seg if not segments else seg[1:])
+
+    if not segments:
+        return np.empty((0, 2), dtype=np.float64)
+    return np.concatenate(segments, axis=0)
+
+
+# ---------------------------------------------------------------------------
 # Full route pipeline
 # ---------------------------------------------------------------------------
 
@@ -145,9 +193,9 @@ def build_route(G, projector, cfg: dict) -> dict:
             "Check that the graph covers the waypoint area and is connected."
         )
 
-    log.info("Route uses %d graph nodes; projecting …", len(node_path))
-    lats = np.array([G.nodes[n]["y"] for n in node_path], dtype=np.float64)
-    lons = np.array([G.nodes[n]["x"] for n in node_path], dtype=np.float64)
+    log.info("Route uses %d graph nodes; collecting edge geometries …", len(node_path))
+    latlons = _collect_path_latlons(G, node_path)
+    lats, lons = latlons[:, 0], latlons[:, 1]
     xs, zs = projector.batch_to_xz(lats, lons)
 
     # Densify all four columns together for consistent interpolation
