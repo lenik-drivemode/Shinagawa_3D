@@ -4,6 +4,44 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-07-02 — Phase 8: Polish & Diagnostics
+
+### Added
+- `scripts/run_all.py` — full pipeline orchestrator (01→04 in order); flags:
+  `--rebuild` (force re-preprocess), `--no-viewer` (preprocessing only),
+  `--small-bbox`, `--config`; stops with clear error on first failure
+- `src/osm3d_poc/render/screenshot.py` — `save_screenshot(bytes, w, h, path)`:
+  reshapes raw RGB framebuffer, flips Y (OpenGL bottom-left → image top-left),
+  saves as PIL PNG; raises `ValueError` on wrong buffer size, `ImportError` if
+  Pillow is absent
+- `src/osm3d_poc/render/renderer.py` updated — Phase 8 additions:
+  - P key: queues screenshot to `screenshot_<unix_ts>.png`, captured next frame
+  - `--screenshot PATH` flag: saves screenshot after first frame
+  - `--debug` flag: reduces progress log interval from 5 s → 1 s; adds camera
+    mode to each progress log line
+  - `_pending_screenshot` attribute; screenshot is captured after all draw calls
+    to include the full scene
+- `scripts/04_run_viewer.py` updated: `--screenshot PATH`, `--debug` flags
+- `requirements.txt`: added `Pillow>=9.0` for PNG screenshot support
+- `README.md` overhauled: corrected controls table (removed Q/E and arrow keys
+  that were never implemented; added `[/]` speed, `P` screenshot); added
+  `run_all.py` usage section; added `--screenshot`/`--debug` flags; fixed
+  troubleshooting entries; added performance draw-call count note
+- `tests/test_screenshot.py` — 8 tests: file creation, return type, dimensions,
+  RGB mode, Y-flip verification (blue top row / red bottom row after flip),
+  solid-color preservation, wrong-buffer-size ValueError, string path accepted
+- `tests/test_run_all.py` — 13 tests: default 4-step ordering, `--no-viewer`
+  skips step 4, `--config` propagated to all, `--small-bbox` propagated to all,
+  `--rebuild` only on preprocess+route scripts, script paths under scripts_dir,
+  subprocess success→True / failure→False / early-stop on first failure
+
+### Notes
+- Screenshot is queued (not captured immediately on keypress) so the full scene
+  — including the animated marker — is present in the image
+- `--debug` flag is intended for development/diagnostics; `--show-stats` still
+  prints mesh counts at startup as a separate one-shot mode
+- In-window text overlay remains deferred to post-MVP (see Known Limitations)
+
 ## [0.8.0] — 2026-07-02 — Phase 7: Vehicle Simulation
 
 ### Added
