@@ -4,6 +4,36 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-02 — Phase 5: Route Generation
+
+### Added
+- `src/osm3d_poc/geo/route_builder.py` — complete route pipeline:
+  `snap_waypoints` (cosine-corrected Euclidean nearest-node, no scikit-learn dep),
+  `build_node_path` (nx.shortest_path with weight="length", dedup join nodes),
+  `_densify_columns` (multi-column linear interpolation, distance via XZ cols 0-1),
+  `densify_xz` (≤5 m segment length per PRD §13.3),
+  `compute_cumulative_s` (float64 arc-length, s[0]=0),
+  `build_route` (full pipeline → §10.4 JSON dict),
+  `save_route` / `load_route` (JSON → float32 xyz, s arrays)
+- `scripts/03_build_route.py` — CLI: `--config`, `--small-bbox`, `--rebuild`;
+  writes `data/routes/shinagawa_loop.json`; saves diagnostic JSON on failure
+  (NFR-REL-003); updates metadata.json with route counts
+- `tests/test_route_builder.py` — 34 tests: densification (no-change, insertion,
+  endpoint preservation, max-seg enforcement, multi-dim interpolation),
+  cumulative-s (zero start, monotone, dtype, correctness), build_node_path
+  (simple, loop, dedup, no-path, same-node), build_route (keys, schema,
+  fields, s monotone, length == last s, route_y, densification), save/load
+  roundtrip
+
+### Notes
+- `snap_waypoints` uses numpy argmin on cosine-corrected lat/lon distance —
+  avoids scikit-learn and osmnx's `G.graph["crs"]` requirement;
+  equivalent to haversine for nearest-node search on Shinagawa scale
+- Route lat/lon columns are linearly interpolated for densified points
+  (geographic error < 1 mm over 5 m segments — acceptable for MVP)
+- Route JSON follows §10.4 format; `load_route` returns float32 arrays
+  for direct GPU use in Phase 7
+
 ## [0.5.0] — 2026-07-02 — Phase 4: Building Mesh Generation
 
 ### Added
