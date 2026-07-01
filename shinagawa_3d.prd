@@ -1,0 +1,1786 @@
+PRODUCT REQUIREMENTS DOCUMENT
+PoC: Python Desktop 3D OSM Map Renderer with Simulated Vehicle Route
+Area: Tokyo, Shinagawa / Takanawa / Konan / Osaki / Gotanda vicinity
+Document version: 1.1
+Date: 2026-07-02
+Author: ChatGPT for Lenik Terenin
+Revised: 2026-07-02 — resolved window library, follow-camera UX, text overlay scope, starting state, mouse controls, speed hotkeys, missing config fields, and minor structural gaps (see revision notes in each section)
+
+================================================================================
+1. PROJECT SUMMARY
+================================================================================
+
+Build a desktop Proof of Concept application in Python that:
+
+1. Downloads or loads a small subset of OpenStreetMap data around Tokyo's Shinagawa area.
+2. Preprocesses the data into lightweight local render assets.
+3. Renders a simplified 3D map with roads and buildings using OpenGL from Python.
+4. Animates a marker, representing a vehicle, along a predefined 4-5 km closed-loop route.
+5. Demonstrates a stable interactive camera and smooth playback at a target of 30-60 FPS on a normal laptop.
+
+This is not intended to be a full navigation app, routing engine, or production-quality map renderer. The goal is to validate whether a Python + OpenGL stack can support a visually clear local 3D map and route-following simulation using real OSM-derived geometry.
+
+Recommended PoC stack:
+
+- Python 3.11+
+- OSMnx for OSM street/building retrieval and graph processing
+- GeoPandas / Shapely for geospatial preprocessing
+- pyproj for coordinate projection
+- NumPy for geometry buffers
+- ModernGL for OpenGL rendering
+- moderngl-window for window/context/input (chosen; see FR-CAM-001)
+- Optional: networkx for route graph operations if not using OSMnx helper methods directly
+
+Key reference links:
+
+- OSMnx documentation: https://osmnx.readthedocs.io/
+- ModernGL documentation: https://moderngl.readthedocs.io/
+- ModernGL GitHub: https://github.com/moderngl/moderngl
+- Overpass bounding-box documentation: https://dev.overpass-api.de/overpass-doc/en/full_data/bbox.html
+- Overpass API / Overpass QL: https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL
+- pyproj documentation: https://pyproj4.github.io/pyproj/
+- OpenStreetMap elements: https://wiki.openstreetmap.org/wiki/Elements
+
+================================================================================
+2. GOALS AND NON-GOALS
+================================================================================
+
+2.1 Goals
+---------
+
+G1. Load a real OSM-derived street network for a small Shinagawa-area bounding box.
+
+G2. Load building footprints in the same area, extrude them into simple 3D blocks, and render them together with roads.
+
+G3. Preprocess raw geospatial data into local coordinate geometry suitable for real-time rendering.
+
+G4. Define or auto-generate a 4-5 km closed-loop vehicle route on drivable streets.
+
+G5. Animate a marker along this route at a configurable simulated speed, e.g. 30 km/h, 40 km/h, 50 km/h.
+
+G6. Display the route itself as a highlighted path on top of the road layer.
+
+G7. Allow basic camera control:
+
+- pan / orbit / rotate around the map;
+- zoom in/out;
+- optional follow-vehicle camera;
+- optional top-down and oblique 3D view modes.
+
+G8. Achieve smooth rendering:
+
+- minimum acceptable: 30 FPS on a normal laptop;
+- target: 60 FPS with the default dataset;
+- avoid visible stutters during normal playback after preprocessing has completed.
+
+G9. Persist preprocessed local assets so that subsequent app starts do not need to re-download or reprocess OSM data.
+
+G10. Keep the code structured so C++/Rust acceleration can later be introduced for geometry preprocessing without rewriting the whole application.
+
+2.2 Non-goals
+-------------
+
+NG1. No live turn-by-turn navigation.
+
+NG2. No live GPS support in PoC scope.
+
+NG3. No large-scale map streaming. Only one local area is required.
+
+NG4. No production-grade cartographic styling.
+
+NG5. No advanced label rendering in the first PoC version.
+
+NG6. No terrain elevation in the first PoC version.
+
+NG7. No realistic traffic simulation.
+
+NG8. No realistic vehicle physics; the marker simply moves along a polyline path.
+
+NG9. No map matching against noisy GPS data in this PoC.
+
+NG10. No mobile support.
+
+NG11. No packaging for Windows/macOS/Linux installers unless added as a stretch goal.
+
+================================================================================
+3. TARGET USER / USE CASE
+================================================================================
+
+Primary user:
+
+- Developer / technical evaluator who wants to test Python's feasibility for a desktop 3D OSM renderer.
+
+Primary scenario:
+
+1. Developer runs a preprocessing script.
+2. Script downloads or loads OSM data for the Shinagawa area.
+3. Script creates local render assets: roads, buildings, route, metadata.
+4. Developer starts the renderer.
+5. App opens a 3D scene showing roads and building blocks.
+6. A vehicle marker drives around a closed loop for 4-5 km.
+7. Developer can move the camera, pause/resume the marker, and inspect FPS.
+
+================================================================================
+4. AREA OF INTEREST
+================================================================================
+
+4.1 Recommended PoC Area
+------------------------
+
+Use a small but dense urban area around Shinagawa Station. This gives enough buildings, roads, overpasses, and visual complexity without becoming too large.
+
+Recommended approximate center:
+
+- Shinagawa Station area
+- Latitude: 35.6285
+- Longitude: 139.7388
+
+Recommended initial bounding box:
+
+- North latitude: 35.6420
+- South latitude: 35.6150
+- East longitude: 139.7600
+- West longitude: 139.7150
+
+Approximate coverage:
+
+- north-south: about 3.0 km
+- east-west: about 4.0 km
+
+This covers a useful area around Shinagawa, Takanawa, Konan, Osaki, and possibly Gotanda depending on exact bounds.
+
+4.2 Alternative Smaller Debug Area
+----------------------------------
+
+For performance/debug runs, use a smaller bounding box:
+
+- North latitude: 35.6350
+- South latitude: 35.6220
+- East longitude: 139.7500
+- West longitude: 139.7270
+
+This smaller area should load faster and is useful while developing the renderer.
+
+4.3 Coordinate System
+---------------------
+
+Raw OSM data uses WGS84 latitude/longitude.
+
+For rendering, convert all geometry into a local metric coordinate system.
+
+Recommended approach:
+
+1. Use pyproj to project WGS84 coordinates into a metric projection.
+2. For Tokyo, use UTM zone 54N or a suitable Japanese plane rectangular coordinate system.
+3. Subtract a local origin near the bounding box center so OpenGL coordinates stay small.
+
+Recommended PoC projection:
+
+- EPSG:4326 input, WGS84 lat/lon
+- EPSG:32654 output, WGS84 / UTM zone 54N
+
+Local rendering coordinate convention:
+
+- X: east-west meters, positive east
+- Y: up, vertical meters
+- Z: north-south meters, positive north
+
+After projection:
+
+- world_x = projected_easting - origin_easting
+- world_z = projected_northing - origin_northing
+- world_y = elevation/height
+
+================================================================================
+5. DATA SOURCES
+================================================================================
+
+5.1 Preferred Data Source for PoC
+---------------------------------
+
+Use OSMnx to retrieve data from OpenStreetMap / Overpass.
+
+Required OSM data categories:
+
+1. Drivable road network
+2. Building footprints
+3. Optional water/green/rail layers if easy, but not required for MVP
+
+OSMnx can download and model street networks and other geospatial features from OpenStreetMap. It is suitable for this PoC because it can retrieve driving networks and building footprints with relatively little code.
+
+5.2 Alternative Data Loading Method
+-----------------------------------
+
+For more reproducible tests, use a downloaded OSM PBF extract or cached GeoPackage/GraphML instead of querying Overpass every time.
+
+Possible sources:
+
+- OSMnx cache
+- manually downloaded Geofabrik Japan/Kanto extract
+- local clipped .osm.pbf made using osmium
+- saved GraphML for road graph
+- saved GeoPackage/Parquet/GeoJSON for buildings
+
+PoC should support at least one cache path and avoid repeated Overpass requests during normal development.
+
+5.3 Data Licensing Note
+-----------------------
+
+OpenStreetMap data is licensed under the Open Database License. Any public distribution using OSM-derived data should include proper attribution. For this private PoC, still display attribution in the UI or README:
+
+"Map data © OpenStreetMap contributors"
+
+================================================================================
+6. HIGH-LEVEL ARCHITECTURE
+================================================================================
+
+6.1 Components
+--------------
+
+The project should be split into these components:
+
+A. Data acquisition
+B. Data preprocessing
+C. Asset serialization/cache
+D. Route generation/definition
+E. Rendering engine
+F. Simulation engine
+G. UI/input/FPS overlay
+H. Configuration and logging
+
+6.2 Proposed Repository Layout
+------------------------------
+
+project_root/
+  README.md
+  requirements.txt
+  pyproject.toml                         optional
+  config/
+    shinagawa_poc.yaml
+  data/
+    raw/                                  downloaded/cached OSM data
+    processed/                            render-ready assets
+    routes/                               route definitions
+  src/
+    osm3d_poc/
+      __init__.py
+      app.py                              main application entry point
+      config.py
+      logging_config.py
+      geo/
+        download_osm.py                   OSMnx/Overpass acquisition
+        projection.py                     WGS84 -> local metric coordinates
+        preprocess_roads.py
+        preprocess_buildings.py
+        route_builder.py
+        spatial_index.py                  optional
+      render/
+        renderer.py                       ModernGL renderer orchestration
+        camera.py
+        shaders.py
+        mesh.py
+        road_mesh.py
+        building_mesh.py
+        vehicle_mesh.py
+        route_mesh.py
+        debug_draw.py
+      sim/
+        route_player.py                   marker position along route
+        timing.py
+      ui/
+        input.py
+        overlay.py
+      assets/
+        shaders/
+          road.vert
+          road.frag
+          building.vert
+          building.frag
+          route.vert
+          route.frag
+          vehicle.vert
+          vehicle.frag
+  scripts/
+    01_download_osm.py
+    02_preprocess_assets.py
+    03_build_route.py
+    04_run_viewer.py
+    run_all.py
+    clean_cache.py
+  tests/
+    test_projection.py
+    test_route_player.py
+    test_preprocess_roads.py
+    test_building_extrusion.py
+
+6.3 Runtime Data Flow
+---------------------
+
+Preprocessing flow:
+
+1. Read config bounding box.
+2. Download or load road graph.
+3. Download or load building footprints.
+4. Project all coordinates to local metric coordinates.
+5. Convert road centerlines into renderable line/strip geometry.
+6. Convert building footprints into extruded 3D mesh geometry.
+7. Generate or validate route polyline.
+8. Save processed arrays to local disk.
+
+Runtime flow:
+
+1. Load processed asset metadata.
+2. Load road, building, route, and vehicle meshes into NumPy arrays.
+3. Upload arrays to GPU buffers.
+4. Start render loop.
+5. Update marker position along route based on elapsed simulation time.
+6. Draw roads, buildings, route, marker, and debug overlay each frame.
+
+================================================================================
+7. FUNCTIONAL REQUIREMENTS
+================================================================================
+
+7.1 Data Acquisition Requirements
+---------------------------------
+
+FR-DATA-001: The preprocessing script shall retrieve a drivable street network for the configured Shinagawa bounding box.
+
+FR-DATA-002: The preprocessing script shall retrieve building footprints for the same bounding box.
+
+FR-DATA-003: The system shall cache downloaded data locally to avoid repeated requests to the OSM/Overpass servers.
+
+FR-DATA-004: The system shall allow offline reruns using cached raw data.
+
+FR-DATA-005: The script shall log the bounding box, number of graph nodes, number of edges, number of building footprints, and output file paths.
+
+FR-DATA-006: The script shall handle missing building height tags gracefully.
+
+FR-DATA-007: The script shall ignore invalid or impossible geometries rather than crashing.
+
+FR-DATA-008: The script shall save a metadata JSON file containing:
+
+- data timestamp;
+- bounding box;
+- projection EPSG;
+- local origin lat/lon;
+- local origin projected coordinates;
+- counts of roads/buildings/vertices/triangles;
+- route length in meters;
+- preprocessing version.
+
+7.2 Road Preprocessing Requirements
+-----------------------------------
+
+FR-ROAD-001: The road layer shall include drivable roads suitable for vehicle simulation.
+
+FR-ROAD-002: Each road segment shall be converted from lat/lon to local X/Z meter coordinates.
+
+FR-ROAD-003: Road visual geometry shall be generated as strips, not raw GL_LINES, if the desired visual width should remain stable and clear.
+
+FR-ROAD-004: Road width shall be determined from OSM tags where possible, with fallbacks by highway type.
+
+Suggested road width fallback table:
+
+- motorway / trunk: 12.0 m
+- primary: 10.0 m
+- secondary: 8.0 m
+- tertiary: 7.0 m
+- residential: 5.5 m
+- service: 4.0 m
+- unclassified: 5.0 m
+- default: 5.0 m
+
+FR-ROAD-005: Road mesh generation shall support polylines with more than two points.
+
+FR-ROAD-006: For the MVP, intersections may have visual overlap artifacts. Perfect road joins are not required.
+
+FR-ROAD-007: Road vertices shall include at minimum:
+
+- position: x, y, z
+- optional color/style id
+- optional road type id
+
+FR-ROAD-008: Road mesh shall be saved in a render-ready format such as .npz:
+
+- road_vertices: float32 array, shape [N, 3] or [N, 6]
+- road_indices: uint32 array, shape [M]
+- road_metadata: JSON-compatible list or sidecar file
+
+7.3 Building Preprocessing Requirements
+---------------------------------------
+
+FR-BLDG-001: Building footprints shall be loaded from OSM building tags.
+
+FR-BLDG-002: Building footprints shall be projected into local metric coordinates.
+
+FR-BLDG-003: Invalid polygons shall be fixed if possible using Shapely tools or skipped with a warning.
+
+FR-BLDG-004: Each building shall be extruded into a simple 3D mesh.
+
+FR-BLDG-005: Building height shall be determined using this priority:
+
+1. OSM height tag, if available and parseable.
+2. OSM building:levels tag multiplied by default floor height.
+3. Default random or deterministic fallback height.
+
+Suggested height rules:
+
+- floor height: 3.0 m
+- default building height: 9.0 m
+- maximum fallback random height: 18.0 m
+- clamp explicit heights to 3.0-250.0 m for visual sanity
+
+FR-BLDG-006: Building extrusion shall produce wall triangles and roof triangles.
+
+FR-BLDG-007: For MVP, complex roofs are not required. Flat roofs are enough.
+
+FR-BLDG-008: For MVP, holes in building polygons may be ignored, but this limitation must be documented.
+
+FR-BLDG-009: For better quality, polygon triangulation should support holes in later versions.
+
+FR-BLDG-010: Building vertices shall include at minimum:
+
+- position: x, y, z
+- normal: nx, ny, nz, if simple lighting is implemented
+- optional building id/style id
+
+FR-BLDG-011: Building mesh shall be saved in a render-ready format such as .npz:
+
+- building_vertices: float32 array
+- building_indices: uint32 array
+- building_metadata: JSON-compatible list or sidecar file
+
+7.4 Route Requirements
+----------------------
+
+FR-ROUTE-001: The PoC shall include one predefined 4-5 km route.
+
+FR-ROUTE-002: The route should be a closed loop or near-closed loop.
+
+FR-ROUTE-003: The route shall follow the OSM drivable road graph.
+
+FR-ROUTE-004: The route shall be stored as an ordered list of projected local points and optionally original OSM graph node IDs.
+
+FR-ROUTE-005: The route file shall include cumulative distance along the route for fast marker interpolation.
+
+FR-ROUTE-006: The route shall be highlighted visually in the renderer.
+
+FR-ROUTE-007: The marker shall move continuously along the route and wrap back to the beginning when the end is reached.
+
+FR-ROUTE-008: The initial route speed shall be configurable.
+
+Suggested route simulation speeds:
+
+- default: 40 km/h
+- debug slow: 10 km/h
+- fast demo: 80 km/h
+
+FR-ROUTE-009: The user shall be able to pause/resume route animation.
+
+FR-ROUTE-010: The user shall be able to reset the marker to the start of the route.
+
+7.5 Suggested Route Around Shinagawa
+------------------------------------
+
+The exact route should be generated against the downloaded OSM graph, so the implementation should not rely only on manually listed coordinates. However, the following approximate loop can be used as target waypoints:
+
+A. Shinagawa Station / Takanawa Gateway vicinity
+   approx lat/lon: 35.6285, 139.7388
+
+B. Takanawa / Sengakuji side
+   approx lat/lon: 35.6370, 139.7380
+
+C. Konan / Shinagawa Intercity side
+   approx lat/lon: 35.6265, 139.7475
+
+D. Osaki / Gotanda direction
+   approx lat/lon: 35.6200, 139.7285
+
+E. Return to Shinagawa Station vicinity
+   approx lat/lon: 35.6285, 139.7388
+
+Implementation should:
+
+1. Snap these waypoints to nearest graph nodes.
+2. Compute shortest paths between consecutive waypoints.
+3. Concatenate those paths.
+4. Measure total route length.
+5. If route is shorter than 4 km, expand the waypoint set.
+6. If route is longer than 5.5 km, use a smaller loop or adjust waypoints.
+7. Save the final route.
+
+Alternative algorithm:
+
+1. Pick a starting graph node near Shinagawa Station.
+2. Search for candidate nodes 1.0-1.5 km away in several directions.
+3. Build a loop using shortest paths between candidates.
+4. Score candidates by total length close to 4.5 km and low repeated-edge count.
+5. Save the best route.
+
+7.6 Rendering Requirements
+--------------------------
+
+FR-RENDER-001: The renderer shall use OpenGL through Python.
+
+FR-RENDER-002: Preferred rendering library is ModernGL.
+
+FR-RENDER-003: The app shall open a desktop window of at least 1280 x 720.
+
+FR-RENDER-004: The app shall render:
+
+- background plane;
+- roads;
+- buildings;
+- highlighted route;
+- moving vehicle marker;
+- basic FPS/status overlay.
+
+FR-RENDER-005: Roads and buildings shall be uploaded to GPU buffers once at startup, not rebuilt every frame.
+
+FR-RENDER-006: The per-frame loop shall avoid per-object Python draw calls for individual buildings or road segments.
+
+FR-RENDER-007: The renderer shall batch roads into one or a small number of draw calls.
+
+FR-RENDER-008: The renderer shall batch buildings into one or a small number of draw calls.
+
+FR-RENDER-009: The marker may be updated each frame using a small dynamic transform matrix or small dynamic vertex buffer.
+
+FR-RENDER-010: The route highlight shall be rendered as a separate strip or line mesh.
+
+FR-RENDER-011: Simple camera projection shall be implemented:
+
+- perspective projection for 3D view;
+- optional orthographic projection for top-down debug view.
+
+FR-RENDER-012: Renderer shall handle window resize correctly.
+
+FR-RENDER-013: Renderer shall expose simple visual style parameters in config:
+
+- road color;
+- route color;
+- building color;
+- background color;
+- marker size;
+- building height scale.
+
+7.7 Camera and Input Requirements
+---------------------------------
+
+FR-CAM-001: The app shall support both mouse and keyboard camera controls. Window/input library: moderngl-window.
+
+Mouse controls:
+
+- Left-button drag: orbit (rotate yaw/pitch around target)
+- Right-button drag: pan (translate camera target in the horizontal plane)
+- Scroll wheel: zoom in/out
+
+Keyboard controls:
+
+- W/S: move camera forward/backward
+- A/D: move camera left/right
+- Q/E: rotate camera left/right or move down/up
+- Arrow keys: rotate/pitch camera
+- Space: pause/resume vehicle animation
+- R: reset marker to start
+- F: cycle follow-camera sub-mode (orbit → close-follow → high-aerial → back to orbit)
+- T: toggle top-down camera
+- [ / ]: decrease/increase simulation speed by 10 km/h
+- Esc: exit
+
+FR-CAM-002: Initial camera shall show the whole route and nearby buildings.
+
+FR-CAM-003: Follow mode has two sub-modes, cycled by pressing F:
+
+Sub-mode A — Close follow (cinematic):
+- Camera 20–30 m behind the marker, 10–15 m above road level.
+- Perspective projection; field of view shows the road ahead and nearby buildings.
+
+Sub-mode B — High aerial (map-watching):
+- Camera 80–150 m above the marker, looking slightly downward.
+- Always reveals the surrounding neighbourhood; marker appears small.
+
+Both sub-modes rotate with the marker heading.
+
+FR-CAM-004: Top-down mode shall place the camera above the route center.
+
+7.8 Simulation Requirements
+---------------------------
+
+FR-SIM-000: The simulation shall start running immediately when the app opens. The marker begins moving from the route origin on the first frame.
+
+FR-SIM-001: The simulation shall use elapsed real time and configurable speed to compute traveled distance.
+
+FR-SIM-002: Position interpolation shall use cumulative route distance.
+
+FR-SIM-003: Marker heading shall be computed from the route tangent.
+
+FR-SIM-004: Marker shall wrap around when route distance exceeds total route length.
+
+FR-SIM-005: Simulation speed shall be configurable from a config file and from runtime hotkeys. Keys [ and ] decrease/increase speed by 10 km/h, clamped to [5, 200] km/h.
+
+FR-SIM-006: Marker visual height shall be slightly above road surface, e.g. y = 0.2 m.
+
+FR-SIM-007: Marker shall be clearly visible in both oblique and top-down views.
+
+7.9 UI / Overlay Requirements
+-----------------------------
+
+FR-UI-001: The app shall display FPS.
+
+FR-UI-002: The app shall display route progress:
+
+- distance traveled;
+- total route length;
+- speed in km/h;
+- paused/running state.
+
+FR-UI-003: The app shall display current camera mode.
+
+FR-UI-004: The app shall display data counts in a debug panel or console log:
+
+- road vertices/triangles;
+- building vertices/triangles;
+- number of buildings;
+- route length.
+
+FR-UI-005: For MVP, FPS is displayed in the window title. Route progress (FR-UI-002), camera mode (FR-UI-003), and data counts (FR-UI-004) are printed to the console at startup and on state changes — not rendered on-screen in MVP.
+
+Postponed (post-MVP): in-window text overlay using bitmap font or ImGui. This must be tracked as a known limitation in README and CHANGELOG.
+
+================================================================================
+8. NON-FUNCTIONAL REQUIREMENTS
+================================================================================
+
+8.1 Performance
+---------------
+
+NFR-PERF-001: Target FPS shall be 60 FPS at 1280 x 720 with default Shinagawa dataset.
+
+NFR-PERF-002: Minimum acceptable FPS shall be 30 FPS.
+
+NFR-PERF-003: Renderer shall avoid creating large Python objects in the per-frame loop.
+
+NFR-PERF-004: Renderer shall avoid rebuilding road/building geometry during normal playback.
+
+NFR-PERF-005: Startup loading after preprocessing shall complete in under 10 seconds on a normal laptop for the default dataset.
+
+NFR-PERF-006: Preprocessing may take longer, but should normally finish under 2 minutes for the default area.
+
+NFR-PERF-007: Route simulation update shall take less than 1 ms per frame.
+
+NFR-PERF-008: Total GPU draw calls should ideally be fewer than 20 per frame for MVP.
+
+8.2 Reliability
+---------------
+
+NFR-REL-001: If OSM download fails, the script shall show a clear error message and suggest using cached data.
+
+NFR-REL-002: If a building polygon fails triangulation/extrusion, it shall be skipped and counted.
+
+NFR-REL-003: If route generation fails, the script shall save diagnostic information about snapped waypoints and graph connectivity.
+
+NFR-REL-004: The app shall not crash if optional tags like height, lanes, width, or building:levels are missing.
+
+8.3 Maintainability
+-------------------
+
+NFR-MAINT-001: Data processing and rendering code shall be separated.
+
+NFR-MAINT-002: The rendering engine shall consume generic mesh buffers and should not know about raw OSM details.
+
+NFR-MAINT-003: Projection logic shall be centralized in one module.
+
+NFR-MAINT-004: Configurable constants shall not be hardcoded across many files.
+
+NFR-MAINT-005: The code shall be ready for future replacement of Python preprocessing with C++/Rust if needed.
+
+8.4 Portability
+---------------
+
+NFR-PORT-001: Primary target OS shall be Linux.
+
+NFR-PORT-002: Secondary targets shall be Windows and macOS if ModernGL/window dependencies are available.
+
+NFR-PORT-003: Avoid OS-specific APIs in MVP.
+
+NFR-PORT-004: Python package versions shall be pinned or constrained.
+
+8.5 Visual Quality
+------------------
+
+NFR-VIS-001: Roads shall be visibly distinct from background.
+
+NFR-VIS-002: Route highlight shall be clearly visible above roads.
+
+NFR-VIS-003: Buildings shall not obscure the marker completely in default view.
+
+NFR-VIS-004: Camera near/far planes shall avoid clipping the map in default view.
+
+NFR-VIS-005: Simple directional lighting or flat color shading is sufficient for MVP.
+
+================================================================================
+9. CONFIGURATION
+================================================================================
+
+Create config/shinagawa_poc.yaml with at least these fields:
+
+area:
+  name: "Tokyo Shinagawa PoC"
+  bbox:
+    north: 35.6420
+    south: 35.6150
+    east: 139.7600
+    west: 139.7150
+  center:
+    lat: 35.6285
+    lon: 139.7388
+
+projection:
+  source_epsg: 4326
+  target_epsg: 32654
+  local_origin: "bbox_center"
+
+osm:
+  use_cache: true
+  cache_dir: "data/raw"
+  network_type: "drive"
+  building_tags:
+    building: true
+
+preprocess:
+  output_dir: "data/processed/shinagawa"
+  default_building_height_m: 9.0
+  floor_height_m: 3.0
+  max_building_height_m: 250.0
+  road_y_m: 0.02
+  route_y_m: 0.08
+  marker_y_m: 0.20
+  simplify_roads: true
+  simplify_tolerance_m: 0.25
+
+route:
+  output_file: "data/routes/shinagawa_loop.json"
+  desired_min_length_m: 4000
+  desired_max_length_m: 5500
+  default_speed_kmh: 40
+  waypoints:
+    - {name: "Shinagawa Station", lat: 35.6285, lon: 139.7388}
+    - {name: "Sengakuji", lat: 35.6370, lon: 139.7380}
+    - {name: "Konan", lat: 35.6265, lon: 139.7475}
+    - {name: "Osaki/Gotanda side", lat: 35.6200, lon: 139.7285}
+    - {name: "Shinagawa Station return", lat: 35.6285, lon: 139.7388}
+
+render:
+  window_width: 1280
+  window_height: 720
+  target_fps: 60
+  background_color: [0.08, 0.09, 0.10, 1.0]
+  road_color: [0.22, 0.22, 0.22, 1.0]
+  route_color: [1.0, 0.55, 0.05, 1.0]
+  building_color: [0.50, 0.53, 0.56, 1.0]
+  marker_color: [0.1, 0.6, 1.0, 1.0]
+  marker_length_m: 8.0
+  marker_width_m: 4.0
+  marker_height_m: 2.0
+  camera_mode: "orbit"
+  initial_camera_height_m: 1200
+  initial_pitch_deg: 45
+  initial_yaw_deg: 0
+  follow_close_back_m: 25
+  follow_close_up_m: 12
+  follow_aerial_up_m: 120
+
+logging:
+  level: "INFO"
+
+================================================================================
+10. DATA FORMATS
+================================================================================
+
+10.1 Metadata JSON
+------------------
+
+File: data/processed/shinagawa/metadata.json
+
+Example:
+
+{
+  "schema_version": 1,
+  "area_name": "Tokyo Shinagawa PoC",
+  "created_at": "2026-07-02T00:00:00+09:00",
+  "bbox": {
+    "north": 35.6420,
+    "south": 35.6150,
+    "east": 139.7600,
+    "west": 139.7150
+  },
+  "projection": {
+    "source_epsg": 4326,
+    "target_epsg": 32654,
+    "origin_easting": 123456.0,
+    "origin_northing": 456789.0
+  },
+  "counts": {
+    "road_segments": 0,
+    "road_vertices": 0,
+    "road_triangles": 0,
+    "buildings": 0,
+    "building_vertices": 0,
+    "building_triangles": 0,
+    "skipped_buildings": 0
+  },
+  "route": {
+    "file": "data/routes/shinagawa_loop.json",
+    "length_m": 4500.0,
+    "closed_loop": true
+  }
+}
+
+10.2 Road Mesh NPZ
+------------------
+
+File: data/processed/shinagawa/roads_mesh.npz
+
+Required arrays:
+
+- vertices: float32, shape [N, 3] or [N, 6]
+- indices: uint32, shape [M]
+
+Optional arrays:
+
+- road_type_ids: uint16
+- segment_ids: uint32
+
+10.3 Building Mesh NPZ
+----------------------
+
+File: data/processed/shinagawa/buildings_mesh.npz
+
+Required arrays:
+
+- vertices: float32, shape [N, 3] or [N, 6]
+- indices: uint32, shape [M]
+
+Optional arrays:
+
+- building_ids: uint32
+- heights: float32
+
+10.4 Route JSON
+---------------
+
+File: data/routes/shinagawa_loop.json
+
+Example:
+
+{
+  "schema_version": 1,
+  "name": "Shinagawa 4-5 km loop",
+  "closed_loop": true,
+  "speed_default_kmh": 40,
+  "length_m": 4520.5,
+  "points": [
+    {"x": 0.0, "y": 0.08, "z": 0.0, "lat": 35.6285, "lon": 139.7388, "s": 0.0},
+    {"x": 10.2, "y": 0.08, "z": 5.5, "lat": 35.6286, "lon": 139.7389, "s": 11.6}
+  ],
+  "source": {
+    "method": "osmnx_shortest_paths_between_waypoints",
+    "waypoints": [
+      {"name": "Shinagawa Station", "lat": 35.6285, "lon": 139.7388}
+    ]
+  }
+}
+
+For performance, the runtime may convert this JSON to arrays at startup:
+
+- route_xyz: float32 [N, 3]
+- route_s: float32 [N]
+
+================================================================================
+11. IMPLEMENTATION PLAN
+================================================================================
+
+Phase 0: Environment Setup
+--------------------------
+
+Tasks:
+
+1. Create Python virtual environment.
+2. Install dependencies.
+3. Verify OpenGL context creation.
+4. Render a simple triangle or cube using ModernGL.
+
+Suggested requirements.txt:
+
+numpy
+pyproj
+shapely
+geopandas
+networkx
+osmnx
+moderngl
+moderngl-window
+pyyaml
+orjson
+rtree
+mapbox-earcut
+
+Notes:
+
+- mapbox-earcut can be used for polygon triangulation.
+- rtree may require system dependencies on some Linux distributions.
+- GeoPandas may require GDAL/Fiona/pyogrio dependencies; use wheels where possible.
+
+Acceptance criteria:
+
+- `python scripts/04_run_viewer.py --demo-cube` opens a window and renders a rotating cube at 60 FPS.
+
+Phase 1: Data Acquisition
+-------------------------
+
+Tasks:
+
+1. Implement config loader.
+2. Implement OSMnx road graph download for bounding box.
+3. Implement building footprint retrieval.
+4. Save raw/cached data to disk.
+5. Log counts and bounding box.
+
+Possible OSMnx calls, conceptually:
+
+- graph_from_bbox(..., network_type="drive")
+- features_from_bbox(..., tags={"building": True})
+
+Actual function names should be verified against installed OSMnx version because OSMnx APIs have changed across versions.
+
+Acceptance criteria:
+
+- Script downloads road graph and buildings for Shinagawa bounding box.
+- Raw data is cached.
+- Rerunning the script with cache enabled does not re-download unnecessarily.
+
+Phase 2: Projection and Local Coordinates
+-----------------------------------------
+
+Tasks:
+
+1. Create pyproj Transformer from EPSG:4326 to EPSG:32654.
+2. Compute projected local origin.
+3. Convert road graph nodes to local x/z.
+4. Convert building polygon coordinates to local x/z.
+5. Write projection tests.
+
+Acceptance criteria:
+
+- Coordinates around Shinagawa produce local values within expected kilometer-scale range.
+- Distance between two close points is plausible in meters.
+- No lat/lon coordinates are passed directly to renderer.
+
+Phase 3: Road Mesh Generation
+-----------------------------
+
+Tasks:
+
+1. Convert graph edges into polylines.
+2. For each polyline, generate a flat road strip mesh.
+3. Use fallback width by road type.
+4. Save roads_mesh.npz.
+5. Add debug matplotlib or GeoPandas preview if useful.
+
+Simple road strip algorithm:
+
+For each line segment between p0 and p1:
+
+1. direction = normalize(p1 - p0)
+2. normal = perpendicular direction in X/Z plane
+3. half_width = road_width / 2
+4. create left/right vertices at p0 and p1
+5. emit two triangles
+
+MVP limitation:
+
+- Adjacent segments may overlap or create gaps at sharp corners.
+- This is acceptable for PoC.
+
+Improved algorithm:
+
+- Compute joins between adjacent segments.
+- Use miter or bevel joins.
+- Clamp miter length.
+
+Acceptance criteria:
+
+- Roads appear as visible strips in a simple debug render.
+- Road geometry uses one combined mesh or a small number of meshes.
+
+Phase 4: Building Mesh Generation
+---------------------------------
+
+Tasks:
+
+1. Parse height/building:levels tags.
+2. Clean invalid polygons where possible.
+3. Triangulate roof polygon.
+4. Generate wall quads as triangles.
+5. Generate roof triangles.
+6. Save buildings_mesh.npz.
+
+MVP handling:
+
+- Use exterior ring only.
+- Ignore inner holes for first version.
+- Skip multipolygons that cannot be handled quickly.
+
+Better handling:
+
+- Use mapbox-earcut for polygons with holes.
+- Iterate MultiPolygon parts separately.
+
+Acceptance criteria:
+
+- Buildings render as simple extruded blocks.
+- At least 80% of valid building footprints in the bbox are rendered.
+- App does not crash on invalid polygons.
+
+Phase 5: Route Generation
+-------------------------
+
+Tasks:
+
+1. Load road graph.
+2. Snap configured waypoint lat/lon to nearest graph nodes.
+3. Compute shortest path between each consecutive waypoint pair.
+4. Concatenate node paths.
+5. Remove duplicate consecutive nodes.
+6. Convert route node coordinates to local x/y/z.
+7. Densify long segments if needed for smoother marker movement.
+8. Compute cumulative distance.
+9. Save route JSON.
+
+Densification rule:
+
+- If distance between consecutive route points > 10 m, insert intermediate points every 5-10 m.
+
+Acceptance criteria:
+
+- Route length is between 4 km and 5.5 km, or the script clearly reports why not.
+- Route starts and ends close to the same location.
+- Route lies on visible roads.
+- Marker can interpolate position and heading along the whole route.
+
+Phase 6: Renderer MVP
+---------------------
+
+Tasks:
+
+1. Create ModernGL context and window.
+2. Load processed .npz assets.
+3. Upload road and building buffers to GPU.
+4. Implement simple shaders.
+5. Implement perspective camera.
+6. Draw roads, buildings, route, and marker.
+7. Add FPS in window title.
+
+Suggested draw order:
+
+1. Background plane
+2. Roads
+3. Route highlight
+4. Buildings
+5. Vehicle marker
+6. Overlay text
+
+Depth testing:
+
+- Enable depth testing for buildings and marker.
+- For route highlight, either place it slightly above road surface or use polygon offset.
+
+Acceptance criteria:
+
+- App opens and shows 3D Shinagawa map.
+- Camera can be moved.
+- Roads and buildings are visible.
+- FPS is displayed.
+
+Phase 7: Vehicle Simulation
+---------------------------
+
+Tasks:
+
+1. Implement RoutePlayer class.
+2. Track current distance along route.
+3. Convert speed km/h to m/s.
+4. Interpolate route position per frame.
+5. Compute heading from adjacent points.
+6. Update marker transform.
+7. Add pause/resume/reset controls.
+8. Add follow-camera mode.
+
+RoutePlayer conceptual API:
+
+class RoutePlayer:
+    def __init__(self, route_xyz, route_s, speed_mps): ...
+    def update(self, dt_seconds): ...
+    def set_paused(self, paused): ...
+    def reset(self): ...
+    def get_pose(self):
+        return position_xyz, heading_radians
+
+Acceptance criteria:
+
+- Marker continuously moves along the route.
+- Marker loops back to start without visible crash/jump beyond normal wrap.
+- Pause and reset work.
+- Marker heading roughly follows road direction.
+
+Phase 8: Polish and Diagnostics
+-------------------------------
+
+Tasks:
+
+1. Add debug overlay/status panel.
+2. Add command-line flags:
+
+- --config
+- --rebuild-assets
+- --route-speed-kmh
+- --small-bbox
+- --wireframe
+- --no-buildings
+- --top-down
+
+3. Add logs for asset loading and render stats.
+4. Add screenshots option.
+5. Add README with setup/run instructions.
+
+Acceptance criteria:
+
+- A new developer can run the PoC from README instructions.
+- App can be started from cached processed data without network.
+- Common errors have clear messages.
+
+================================================================================
+12. RENDERING DESIGN DETAILS
+================================================================================
+
+12.1 Geometry Batching
+----------------------
+
+Do not render each road or building individually.
+
+Bad:
+
+for building in buildings:
+    upload building vertices
+    draw building
+
+Good:
+
+upload all building vertices once
+upload all building indices once
+draw all buildings in one call or a few calls
+
+Reason:
+
+Python-to-OpenGL call overhead can become the bottleneck if thousands of objects are drawn individually.
+
+12.2 Vertex Formats
+-------------------
+
+Minimal road vertex:
+
+struct RoadVertex:
+    float x
+    float y
+    float z
+
+Better road vertex:
+
+struct RoadVertex:
+    float x
+    float y
+    float z
+    float r
+    float g
+    float b
+
+Minimal building vertex:
+
+struct BuildingVertex:
+    float x
+    float y
+    float z
+    float nx
+    float ny
+    float nz
+
+For MVP, flat colors can be uniforms. Per-vertex colors are optional.
+
+12.3 Shaders
+------------
+
+Minimal vertex shader inputs:
+
+- in_position
+- model/view/projection matrix uniforms
+
+Minimal fragment shader:
+
+- uniform color
+
+Optional building lighting:
+
+- normal attribute
+- directional light vector
+- simple diffuse term
+
+12.4 Camera
+-----------
+
+Use three camera modes:
+
+1. Orbit mode
+
+- target: route center or marker
+- distance: configurable
+- yaw/pitch controlled by mouse/keyboard
+
+2. Free mode
+
+- WASD moves camera in world
+- mouse/keys rotate
+
+3. Follow mode (two sub-modes, cycled with F)
+
+Sub-mode A — Close follow:
+- camera 20–30 m behind marker, 10–15 m above road
+- shows road ahead and nearby buildings
+
+Sub-mode B — High aerial:
+- camera 80–150 m above marker, looking slightly down
+- shows surrounding neighbourhood
+
+4. Top-down debug mode
+
+- camera at fixed high Y
+- looking straight down
+- optionally use orthographic projection
+
+12.5 Marker
+-----------
+
+The vehicle marker can be one of:
+
+- simple colored cube;
+- triangular arrow;
+- low-poly car shape;
+- billboard icon.
+
+Recommended MVP marker:
+
+- triangular arrow or rectangular cuboid;
+- length 8 m, width 4 m, height 2 m;
+- drawn slightly above road level.
+
+12.6 Route Highlight
+--------------------
+
+Route highlight should be generated as a strip mesh similar to roads.
+
+Suggested route width:
+
+- 3.0-4.0 m
+
+Suggested vertical offset:
+
+- y = 0.08 m, above road y = 0.02 m
+
+================================================================================
+13. PREPROCESSING DESIGN DETAILS
+================================================================================
+
+13.1 Height Parsing
+-------------------
+
+OSM height values can appear in different forms. MVP parser should handle:
+
+- "12"
+- "12.5"
+- "12 m"
+- "12.5m"
+
+MVP may ignore:
+
+- feet/inches;
+- complex strings;
+- semicolon-separated values.
+
+If height parsing fails:
+
+1. Try building:levels.
+2. Use default height.
+
+13.2 Road Width Parsing
+-----------------------
+
+OSM width values can appear in different forms. MVP parser should handle:
+
+- "6"
+- "6.5"
+- "6 m"
+- "6.5m"
+
+If width parsing fails, use fallback by highway type.
+
+13.3 Route Densification
+------------------------
+
+Marker motion can look jumpy if route points are far apart. Densify after route generation.
+
+Algorithm:
+
+For each segment p0 -> p1:
+
+1. distance = norm(p1 - p0)
+2. count = ceil(distance / max_segment_length_m)
+3. emit interpolated points p0 + t * (p1 - p0)
+
+Use max_segment_length_m = 5.0 for smooth motion.
+
+13.4 Geometry Simplification
+----------------------------
+
+Road/building geometry may be simplified to reduce vertex count.
+
+Suggested values:
+
+- road simplify tolerance: 0.25 m
+- building simplify tolerance: 0.10-0.25 m
+
+Do not oversimplify buildings in a way that causes invalid polygons.
+
+13.5 Data Validation
+--------------------
+
+Before saving processed assets, validate:
+
+- no NaN coordinates;
+- no infinite coordinates;
+- indices are within vertex range;
+- route has at least two points;
+- route length is plausible;
+- buildings have positive height;
+- bounding box and projection metadata exist.
+
+================================================================================
+14. ACCEPTANCE CRITERIA
+================================================================================
+
+AC-001: Running preprocessing for the default Shinagawa config produces:
+
+- metadata.json
+- roads_mesh.npz
+- buildings_mesh.npz
+- shinagawa_loop.json
+
+AC-002: The route length is between 4.0 km and 5.5 km, unless documented route generation constraints prevent it.
+
+AC-003: Running the viewer opens a 1280 x 720 or larger window.
+
+AC-004: The viewer shows roads, buildings, highlighted route, and moving marker.
+
+AC-005: The marker loops continuously along the route.
+
+AC-006: Pause/resume/reset controls work.
+
+AC-007: FPS is visible via overlay or window title.
+
+AC-008: Default view runs at 30 FPS minimum after assets are loaded.
+
+AC-009: On a typical modern laptop, default target should be approximately 60 FPS if GPU/driver support is normal.
+
+AC-010: The app can run from cached processed data without network access.
+
+AC-011: The app does not crash on missing OSM height/width tags.
+
+AC-012: README explains setup, preprocessing, running, controls, and limitations.
+
+================================================================================
+15. TEST PLAN
+================================================================================
+
+15.1 Unit Tests
+---------------
+
+Test projection:
+
+- Input: two known nearby lat/lon points around Shinagawa.
+- Expected: projected local distance is plausible.
+
+Test height parsing:
+
+- "12" -> 12.0
+- "12 m" -> 12.0
+- "12.5m" -> 12.5
+- invalid -> None/fallback
+
+Test road width fallback:
+
+- primary -> 10.0
+- residential -> 5.5
+- unknown -> 5.0
+
+Test route interpolation:
+
+- route of two points 100 m apart;
+- at s = 50 m, position is midpoint.
+
+Test route wrapping:
+
+- route length 1000 m;
+- distance 1100 m wraps to 100 m.
+
+Test mesh validity:
+
+- all indices < vertex_count;
+- no NaN vertices.
+
+15.2 Integration Tests
+----------------------
+
+IT-001: Run full preprocessing with smaller debug bbox.
+
+IT-002: Run full preprocessing with default bbox.
+
+IT-003: Start viewer with generated assets.
+
+IT-004: Start viewer with --no-buildings.
+
+IT-005: Start viewer with --wireframe.
+
+IT-006: Start viewer offline from cache.
+
+15.3 Manual Visual Tests
+------------------------
+
+MVT-001: Roads align with route.
+
+MVT-002: Marker follows route direction.
+
+MVT-003: Buildings are not wildly misplaced.
+
+MVT-004: Camera controls are usable.
+
+MVT-005: Follow mode keeps marker visible.
+
+MVT-006: FPS remains stable after first few seconds.
+
+================================================================================
+16. RISKS AND MITIGATIONS
+================================================================================
+
+Risk 1: OSM/Overpass queries are slow or fail.
+
+Mitigation:
+
+- Use OSMnx cache.
+- Save raw data.
+- Support local data files.
+- Keep bbox small.
+
+Risk 2: OSMnx API changes between versions.
+
+Mitigation:
+
+- Pin OSMnx version.
+- Keep data acquisition wrapper isolated.
+- Document tested version.
+
+Risk 3: Python rendering becomes slow.
+
+Mitigation:
+
+- Batch geometry.
+- Upload static buffers once.
+- Avoid per-object draw calls.
+- Use NumPy arrays.
+- Avoid per-frame geometry creation.
+
+Risk 4: Building polygon triangulation is difficult.
+
+Mitigation:
+
+- Start with exterior rings only.
+- Skip invalid polygons.
+- Use mapbox-earcut for triangulation.
+- Add robust hole handling later.
+
+Risk 5: Route generation does not produce 4-5 km closed loop.
+
+Mitigation:
+
+- Use configurable waypoints.
+- Print route length after generation.
+- Allow manual waypoint adjustment.
+- Implement search/scoring for candidate loop later.
+
+Risk 6: Visual output is too plain.
+
+Mitigation:
+
+- Add simple lighting.
+- Add route highlight.
+- Add marker shape.
+- Add color configuration.
+
+Risk 7: Coordinate precision problems.
+
+Mitigation:
+
+- Use projected meter coordinates.
+- Subtract local origin.
+- Use float32 only after localizing coordinates.
+
+Risk 8: GeoPandas/GDAL installation friction.
+
+Mitigation:
+
+- Provide tested Python version.
+- Provide Linux apt dependencies.
+- Optionally use conda/mamba environment.
+- Keep an alternative minimal path using OSMnx + Shapely if possible.
+
+================================================================================
+17. PERFORMANCE TARGETS AND EXPECTED RESULTS
+================================================================================
+
+Expected geometry scale for default bbox, approximate:
+
+- road segments: hundreds to low thousands
+- buildings: thousands to tens of thousands depending bbox size
+- road triangles: thousands to tens of thousands
+- building triangles: tens of thousands to hundreds of thousands
+
+Expected performance if implemented correctly:
+
+- preprocessing: under 2 minutes for default bbox
+- asset loading: under 10 seconds
+- rendering without buildings: 60 FPS easily
+- rendering with buildings: 30-60 FPS target
+- route animation logic: negligible cost
+
+Performance-sensitive rules:
+
+1. Do not process raw OSM every frame.
+2. Do not triangulate buildings every frame.
+3. Do not issue draw calls per building.
+4. Do not allocate large arrays every frame.
+5. Keep Python per-frame logic minimal.
+6. Let OpenGL/GPU handle drawing.
+
+================================================================================
+18. FUTURE EXTENSIONS
+================================================================================
+
+Future 1: Tile-based asset loading
+
+- Split area into fixed-size tiles.
+- Load/unload tiles by camera position.
+- Required for larger city-scale browsing.
+
+Future 2: Better road rendering
+
+- Proper joins at intersections.
+- Lane markings.
+- Different road classes.
+- Bridges/tunnels/layer support.
+
+Future 3: Labels
+
+- Street names.
+- Station labels.
+- Important landmarks.
+- Label collision avoidance.
+
+Future 4: Terrain
+
+- Add DEM elevation.
+- Project roads/buildings onto terrain.
+
+Future 5: Real GPS trace playback
+
+- Load GPX/CSV route.
+- Animate marker with timestamps.
+- Compare OSM route vs real GPS trace.
+
+Future 6: Map matching
+
+- Snap GPS points to road network.
+- Show raw vs matched positions.
+
+Future 7: C++/Rust preprocessing backend
+
+- Keep Python UI and renderer.
+- Move geometry generation to native extension if needed.
+
+Future 8: Production renderer
+
+- Consider C++/Rust + Vulkan/Metal/OpenGL.
+- Consider bgfx/wgpu.
+- Consider MapLibre Native-style architecture.
+
+Future 9: OSM vector tile pipeline
+
+- Convert OSM data into vector tiles.
+- Render based on tile pyramid and styles.
+
+Future 10: Navigation/route import
+
+- Import route from OSRM/Valhalla/GraphHopper.
+- Simulate turn-by-turn navigation.
+
+================================================================================
+19. MVP DEVELOPMENT CHECKLIST
+================================================================================
+
+[ ] Create repository structure.
+[ ] Create Python virtual environment.
+[ ] Verify ModernGL window opens.
+[ ] Render simple cube.
+[ ] Add config YAML.
+[ ] Download road graph with OSMnx.
+[ ] Download building footprints with OSMnx.
+[ ] Save/load raw cache.
+[ ] Implement pyproj projection.
+[ ] Generate local road coordinates.
+[ ] Generate road strip mesh.
+[ ] Generate building block mesh.
+[ ] Save roads_mesh.npz.
+[ ] Save buildings_mesh.npz.
+[ ] Build route from waypoints.
+[ ] Save route JSON.
+[ ] Load meshes in renderer.
+[ ] Upload VBO/IBO to GPU.
+[ ] Render roads.
+[ ] Render buildings.
+[ ] Render highlighted route.
+[ ] Render marker.
+[ ] Implement route player.
+[ ] Animate marker.
+[ ] Add pause/resume/reset.
+[ ] Add camera controls (orbit, free, follow-close, follow-aerial, top-down).
+[ ] Add mouse drag orbit/pan + scroll zoom.
+[ ] Add speed hotkeys [ / ].
+[ ] Add FPS display in window title.
+[ ] Print route progress and camera mode to console on state change.
+[ ] Add README.
+[ ] Document postponed in-window overlay in README and CHANGELOG.
+[ ] Run acceptance checklist.
+
+================================================================================
+20. RECOMMENDED FIRST IMPLEMENTATION ORDER
+================================================================================
+
+The fastest path to visible success is:
+
+1. Make a ModernGL window and render a cube.
+2. Use fake/simple geometry first: a few roads, a few boxes, a fake route.
+3. Implement RoutePlayer and moving marker on fake route.
+4. Then add OSMnx download.
+5. Then add projection.
+6. Then add real roads.
+7. Then add real route.
+8. Then add buildings.
+9. Then improve visual quality and controls.
+
+Reason:
+
+If rendering, camera, and animation are proven first, OSM preprocessing bugs are easier to isolate. If the project starts with full OSM geometry and no renderer yet, debugging becomes slower and more confusing.
+
+================================================================================
+21. COMMAND-LINE INTERFACE
+================================================================================
+
+Suggested commands:
+
+python scripts/01_download_osm.py --config config/shinagawa_poc.yaml
+
+python scripts/02_preprocess_assets.py --config config/shinagawa_poc.yaml
+
+python scripts/03_build_route.py --config config/shinagawa_poc.yaml
+
+python scripts/04_run_viewer.py --config config/shinagawa_poc.yaml
+
+Optional combined command:
+
+python scripts/run_all.py --config config/shinagawa_poc.yaml --rebuild
+
+Suggested viewer flags:
+
+--demo-cube        render a rotating cube only (Phase 0 smoke-test)
+--no-buildings
+--wireframe
+--top-down
+--follow
+--speed-kmh 40
+--window 1280x720
+--show-stats
+
+================================================================================
+22. README CONTENT REQUIREMENTS
+================================================================================
+
+README should include:
+
+1. Project purpose.
+2. Screenshot or expected visual output description.
+3. System requirements.
+4. Python version.
+5. Installation instructions.
+6. OSM attribution note.
+7. How to run preprocessing.
+8. How to run viewer.
+9. Keyboard/mouse controls.
+10. Known limitations.
+11. Troubleshooting.
+12. Performance notes.
+13. Future work.
+
+Troubleshooting examples:
+
+- OpenGL context fails: check GPU drivers / Mesa / OpenGL version.
+- GeoPandas install fails: use conda/mamba or install system geospatial dependencies.
+- OSM download fails: retry later or use cached data.
+- Route not generated: adjust waypoints or bbox.
+- Low FPS: run with --no-buildings, reduce bbox, check batching.
+
+================================================================================
+23. DEFINITION OF DONE
+================================================================================
+
+The PoC is done when:
+
+1. A developer can clone the repo, install dependencies, and run the pipeline.
+2. The pipeline creates processed Shinagawa-area assets.
+3. The viewer shows a 3D map with roads and buildings.
+4. A marker drives along a 4-5 km closed or near-closed route.
+5. The route is visibly highlighted.
+6. Basic camera controls work.
+7. FPS is displayed.
+8. The app runs at a minimum of 30 FPS after assets are loaded.
+9. The README documents all required commands and limitations.
+10. OSM attribution is present.
+
+================================================================================
+24. SUMMARY RECOMMENDATION
+================================================================================
+
+For this PoC, use Python for the entire stack first:
+
+- OSMnx + GeoPandas/Shapely/pyproj for acquisition and preprocessing.
+- NumPy for render buffers.
+- ModernGL for GPU rendering.
+
+The most important implementation principle is to separate preprocessing from rendering. Python should not parse OSM, triangulate buildings, or build road meshes inside the render loop. Once roads/buildings are converted to GPU buffers, Python should be fast enough for a convincing local 3D Shinagawa route demo.
+
+If the PoC later grows into a city-scale streaming renderer with labels, tiles, complex buildings, and dynamic map interaction, then move preprocessing and/or the renderer core to C++ or Rust. For the first 4-5 km closed-loop demo, Python is a reasonable and efficient starting point.
