@@ -41,11 +41,18 @@ def main() -> None:
     log.info("Projector origin: easting=%.1f  northing=%.1f",
              projector.origin_easting, projector.origin_northing)
 
+    # Use debug_waypoints when running with --small-bbox so all points are inside the graph
+    route_cfg = dict(cfg)
+    if args.small_bbox and "debug_waypoints" in cfg.get("route", {}):
+        route_cfg = {**cfg, "route": {**cfg["route"], "waypoints": cfg["route"]["debug_waypoints"]}}
+        log.info("Using debug_waypoints (%d points) for small-bbox run.",
+                 len(cfg["route"]["debug_waypoints"]))
+
     try:
-        route_dict = build_route(G, projector, cfg)
+        route_dict = build_route(G, projector, route_cfg)
     except RuntimeError as exc:
         log.error("Route generation failed: %s", exc)
-        _save_diagnostics(cfg, G, args.small_bbox)
+        _save_diagnostics(route_cfg, G, args.small_bbox)
         sys.exit(1)
 
     route_path = save_route(route_dict, cfg)

@@ -54,6 +54,14 @@ route:
     - {name: "Osaki/Gotanda side",       lat: 35.6200, lon: 139.7285}
     - {name: "Shinagawa Station return", lat: 35.6285, lon: 139.7388}
 
+  # Waypoints that fit inside the --small-bbox debug area (35.6220–35.6350 N, 139.7270–139.7499 E)
+  debug_waypoints:
+    - {name: "Shinagawa west",  lat: 35.6270, lon: 139.7310}
+    - {name: "Shinagawa north", lat: 35.6330, lon: 139.7390}
+    - {name: "Konan east",      lat: 35.6250, lon: 139.7460}
+    - {name: "Shinagawa south", lat: 35.6230, lon: 139.7350}
+    - {name: "Shinagawa west",  lat: 35.6270, lon: 139.7310}
+
 render:
   window_width:  1280
   window_height: 720
