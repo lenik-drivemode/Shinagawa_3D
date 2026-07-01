@@ -4,6 +4,37 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-07-02 — Phase 7: Vehicle Simulation
+
+### Added
+- `src/osm3d_poc/sim/route_player.py` — `RoutePlayer` class (FR-SIM-000…007):
+  - `update(dt)`: advances arc-length position; wraps at route end (FR-SIM-004)
+  - `get_pose()`: binary-search interpolation → `(pos float32[3], heading float)`;
+    heading = `atan2(dx, dz)` so 0=north, π/2=east (matches `rotate_y` convention)
+  - `set_paused`/`toggle_pause`/`reset`; `speed_mps`/`speed_kmh` with clamp [5, 200] (FR-SIM-005)
+  - Starts running immediately (FR-SIM-000); no scikit-learn, no osmnx CRS dependency
+- `src/osm3d_poc/render/renderer.py` updated — Phase 7 integration:
+  - Creates `RoutePlayer` in `_load_assets` from `cfg["route"]["default_speed_kmh"]`
+  - `render()` calls `player.update(frame_time)`, `get_pose()`, and
+    `camera.set_follow_target(pos, heading)` each frame
+  - Marker model matrix now uses live `pos` + `heading` from player (animated)
+  - FPS title extended: `Shinagawa 3D | N FPS | mode | K km/h [| PAUSED]`
+  - Route progress logged every 5 s (FR-UI-002)
+  - Startup controls hint logged at INFO level (FR-UI-004)
+  - New key handlers: Space (pause/resume), R (reset), [ (−10 km/h), ] (+10 km/h)
+  - `--follow` / `--top-down` CLI flags now apply camera mode at startup
+- `tests/test_route_player.py` — 27 tests: initial state, single/multi-frame advance,
+  speed proportionality, wrap-around (position near start after wrap), pause (no
+  advance), resume, toggle, reset (dist=0, position=route[0]), position interpolation
+  (midpoint, boundary, second segment), dtype, no NaN, heading east (π/2) and north
+  (0), speed setter/clamp (min 5 km/h, max 200 km/h), increment/decrement clamping
+
+### Notes
+- `_KEY_BRACKET_L = 91`, `_KEY_BRACKET_R = 93` (raw ASCII) work on both pyglet
+  and glfw backends without requiring backend-specific key constants
+- RoutePlayer uses `np.searchsorted(side="right") - 1` for O(log N) segment lookup;
+  clipped to `[0, N-2]` so dist exactly at end snaps to last segment
+
 ## [0.7.0] — 2026-07-02 — Phase 6: Renderer MVP
 
 ### Added
