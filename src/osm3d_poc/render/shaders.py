@@ -45,9 +45,9 @@ in vec3 v_normal;
 uniform vec4 color;
 out vec4 f_color;
 void main() {
-    vec3 light = normalize(vec3(0.4, 1.0, 0.3));
+    vec3 light = normalize(vec3(0.6, 1.0, 0.4));
     float diff = abs(dot(normalize(v_normal), light));
-    float ambient = 0.35;
+    float ambient = 0.40;
     float brightness = ambient + (1.0 - ambient) * diff;
     f_color = vec4(color.rgb * brightness, color.a);
 }

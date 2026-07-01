@@ -75,16 +75,18 @@ render:
   window_width:  1280
   window_height: 720
   target_fps: 60
-  background_color: [0.08, 0.09, 0.10, 1.0]
-  road_color:       [0.22, 0.22, 0.22, 1.0]
-  route_color:      [1.00, 0.55, 0.05, 1.0]
-  building_color:   [0.50, 0.53, 0.56, 1.0]
-  marker_color:     [0.10, 0.60, 1.00, 1.0]
+  background_color: [0.40, 0.58, 0.80, 1.0]   # sky blue
+  ground_color:     [0.45, 0.56, 0.40, 1.0]   # saturated grey-green
+  road_color:       [0.96, 0.94, 0.88, 1.0]   # near-white (high contrast vs green ground)
+  route_color:      [1.00, 0.35, 0.00, 1.0]   # vivid orange-red
+  building_color:   [0.70, 0.62, 0.52, 1.0]   # warm brown concrete
+  marker_color:     [0.00, 1.00, 0.50, 1.0]   # bright cyan-green
+  route_strip_width_m: 8.0
   marker_length_m: 8.0
   marker_width_m:  4.0
   marker_height_m: 2.0
   camera_mode: "orbit"
-  initial_camera_height_m: 1200
+  initial_camera_height_m: 600
   initial_pitch_deg: 45
   initial_yaw_deg: 0
   follow_close_back_m: 25

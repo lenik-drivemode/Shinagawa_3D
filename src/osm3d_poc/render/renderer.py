@@ -65,6 +65,7 @@ class Renderer(mglw.WindowConfig):
         self._building_prog = self.ctx.program(vertex_shader=BUILDING_VERT, fragment_shader=BUILDING_FRAG)
 
         # GPU meshes (None if asset not available)
+        self._ground_mesh:   Optional[GpuMesh] = None
         self._road_mesh:     Optional[GpuMesh] = None
         self._route_mesh:    Optional[GpuMesh] = None
         self._building_mesh: Optional[GpuMesh] = None
@@ -106,11 +107,26 @@ class Renderer(mglw.WindowConfig):
         self._bg = tuple(bg[:4] if len(bg) >= 4 else (*bg, 1.0))
 
         r = cfg["render"]
+        self._ground_color   = _vec4(r.get("ground_color", [0.62, 0.68, 0.58, 1.0]))
         self._road_color     = _vec4(r["road_color"])
         self._route_color    = _vec4(r["route_color"])
         self._building_color = _vec4(r["building_color"])
         self._marker_color   = _vec4(r["marker_color"])
         self._marker_y       = float(cfg["preprocess"]["marker_y_m"])
+
+        # Ground plane: large flat quad at y=-1 (1 m below road level) covering
+        # the full scene extents.  At 600+ m viewing height, 1 m is sub-pixel,
+        # but it gives ~95 depth-buffer steps of clearance vs roads at y=0.02.
+        # Drawn without CULL_FACE so it's visible from any camera angle.
+        h = 6000.0
+        gv = np.array([
+            [-h, -1.0, -h], [ h, -1.0, -h],
+            [ h, -1.0,  h], [-h, -1.0,  h],
+        ], dtype=np.float32)
+        gi = np.array([0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2], dtype=np.uint32)
+        self._ground_mesh = GpuMesh(
+            self.ctx, self._flat_prog, gv, gi, "3f", "in_position"
+        )
 
         log.info(
             "Renderer ready (GL %s). Controls: WASD=move F=follow T=top-down "
@@ -161,7 +177,8 @@ class Renderer(mglw.WindowConfig):
             self._route_xyz, self._route_s = load_route(cfg)
             xz      = self._route_xyz[:, [0, 2]]
             route_y = float(self._route_xyz[0, 1])
-            route_verts, route_idxs = polyline_to_strip(xz, width=3.5, y=route_y)
+            route_w = float(cfg["render"].get("route_strip_width_m", 8.0))
+            route_verts, route_idxs = polyline_to_strip(xz, width=route_w, y=route_y)
             if len(route_verts):
                 self._route_mesh = GpuMesh(
                     self.ctx, self._flat_prog,
@@ -225,6 +242,13 @@ class Renderer(mglw.WindowConfig):
         proj   = self._camera.get_projection_matrix(aspect)
         view   = self._camera.get_view_matrix()
         vp     = proj @ view   # world geometry uses identity model
+
+        # --- Ground plane ---
+        self.ctx.disable(moderngl.CULL_FACE)
+        self._flat_prog["mvp"].write(_mvp_bytes(vp))
+        self._flat_prog["color"].write(self._ground_color)
+        self._ground_mesh.draw()
+        self.ctx.enable(moderngl.CULL_FACE)
 
         # --- Roads ---
         if self._road_mesh is not None:

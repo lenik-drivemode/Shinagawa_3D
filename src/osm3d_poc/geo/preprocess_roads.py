@@ -136,7 +136,8 @@ def polyline_to_strip(
         v3 = [p1[0] + perp[0] * half, y, p1[1] + perp[1] * half]
 
         all_verts.extend([v0, v1, v2, v3])
-        all_idxs.append([base, base+1, base+2, base, base+2, base+3])
+        # CCW winding when viewed from +Y (camera above): v0,v2,v1 and v0,v3,v2
+        all_idxs.append([base, base+2, base+1, base, base+3, base+2])
         base += 4
 
     if not all_verts:
