@@ -16,12 +16,13 @@ _CFG_PATH = Path(__file__).parent.parent / "config" / "shinagawa_poc.yaml"
 
 _RENDER_CFG = {
     "render": {
-        "initial_camera_height_m": 1200,
-        "initial_pitch_deg":  45,
-        "initial_yaw_deg":     0,
-        "follow_close_back_m": 25,
-        "follow_close_up_m":   12,
-        "follow_aerial_up_m": 120,
+        "initial_camera_height_m":  1200,
+        "initial_pitch_deg":          45,
+        "initial_yaw_deg":             0,
+        "follow_close_back_m":        25,
+        "follow_close_up_m":          12,
+        "follow_aerial_up_m":        120,
+        "follow_aerial_orbit_deg_s":  20,
     }
 }
 
@@ -265,15 +266,16 @@ def test_camera_pan_drag_changes_target(cfg):
 
 
 def test_follow_aerial_view_matrix_no_nan(cfg):
-    """follow_aerial looks straight down — up must not be parallel to view dir."""
+    """follow_aerial orbits at 30° — view matrix must be finite at all orbit angles."""
     cam = Camera(cfg)
     cam.cycle_follow_mode()   # orbit → follow_close
     cam.cycle_follow_mode()   # follow_close → follow_aerial
-    for heading in [0.0, np.pi / 4, np.pi / 2, np.pi]:
-        cam.set_follow_target(np.array([100.0, 0.0, 200.0]), heading=heading)
+    cam.set_follow_target(np.array([100.0, 0.0, 200.0]), heading=0.0)
+    for t in [0.0, 2.0, 4.5, 9.0, 17.99]:   # various points around the orbit
+        cam.update_time(t)
         m = cam.get_view_matrix()
-        assert not np.any(np.isnan(m)), f"NaN in aerial view matrix at heading={heading}"
-        assert not np.any(np.isinf(m)), f"Inf in aerial view matrix at heading={heading}"
+        assert not np.any(np.isnan(m)), f"NaN in aerial view matrix at t={t}"
+        assert not np.any(np.isinf(m)), f"Inf in aerial view matrix at t={t}"
 
 
 def test_set_follow_target_moves_orbit_target(cfg):

@@ -215,6 +215,7 @@ class Renderer(mglw.WindowConfig):
 
     def on_render(self, time: float, frame_time: float) -> None:
         self.ctx.clear(*self._bg)
+        self._camera.update_time(time)
 
         # --- Simulation tick ---
         pos     = self._route_xyz[0] if self._route_xyz is not None else np.zeros(3, np.float32)

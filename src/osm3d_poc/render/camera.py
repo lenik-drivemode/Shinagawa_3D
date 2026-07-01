@@ -103,10 +103,12 @@ class Camera:
         self._near    = 1.0
         self._far     = 20000.0
 
-        self._follow_back_m  = float(r["follow_close_back_m"])
-        self._follow_up_m    = float(r["follow_close_up_m"])
-        self._aerial_up_m    = float(r["follow_aerial_up_m"])
-        self._aerial_back_m  = float(r.get("follow_aerial_back_m", 0.0))
+        self._follow_back_m      = float(r["follow_close_back_m"])
+        self._follow_up_m        = float(r["follow_close_up_m"])
+        self._aerial_up_m        = float(r["follow_aerial_up_m"])
+        self._aerial_orbit_rad_s = float(r.get("follow_aerial_orbit_deg_s", 20.0)) * np.pi / 180.0
+
+        self._time = 0.0
 
         self._follow_pos     = np.zeros(3, dtype=np.float64)
         self._follow_heading = 0.0
@@ -133,6 +135,10 @@ class Camera:
         self._follow_pos     = np.asarray(pos, dtype=np.float64)
         self._follow_heading = float(heading)
         self.target = self._follow_pos.copy()   # all modes keep vehicle centred
+
+    def update_time(self, t: float) -> None:
+        """Called each frame with total elapsed time (for animated camera modes)."""
+        self._time = float(t)
 
     # ------------------------------------------------------------------
     # Mouse / keyboard input
@@ -207,11 +213,12 @@ class Camera:
             eye   = pos + back + above
             # look toward the marker position
             return look_at(eye, pos, up)
-        else:   # follow_aerial
-            back = np.array([-np.sin(h), 0.0, -np.cos(h)]) * self._aerial_back_m
-            eye  = pos + back + np.array([0.0, self._aerial_up_m, 0.0])
-            fwd  = np.array([np.sin(h), 0.0, np.cos(h)])
-            return look_at(eye, pos, fwd)
+        else:   # follow_aerial — orbit at 30° from vertical
+            angle    = self._time * self._aerial_orbit_rad_s
+            back_m   = self._aerial_up_m * np.tan(np.radians(30.0))
+            orbit_xz = np.array([np.sin(angle), 0.0, np.cos(angle)])
+            eye      = pos + orbit_xz * back_m + np.array([0.0, self._aerial_up_m, 0.0])
+            return look_at(eye, pos, np.array([0.0, 1.0, 0.0]))
 
     def get_projection_matrix(self, aspect: float) -> np.ndarray:
         """Return 4×4 row-major float32 projection matrix."""
