@@ -31,6 +31,10 @@ def _parse_args() -> argparse.Namespace:
                    help="Use smaller debug bounding box")
     p.add_argument("--show-stats", action="store_true",
                    help="Print detailed render statistics at startup")
+    p.add_argument("--screenshot", metavar="PATH", default=None,
+                   help="Save a screenshot to PATH after the first rendered frame, then exit")
+    p.add_argument("--debug",      action="store_true",
+                   help="Log FPS, camera mode, and route progress every second (debug panel)")
     return p.parse_args()
 
 

@@ -1139,19 +1139,27 @@ Phase 8: Polish and Diagnostics
 Tasks:
 
 1. Add debug overlay/status panel.
+   Implementation: --debug flag; logs FPS + camera mode + route progress + speed
+   to console at 1 s interval (in-window text overlay is post-MVP per FR-UI-005).
 2. Add command-line flags:
 
-- --config
-- --rebuild-assets
-- --route-speed-kmh
-- --small-bbox
-- --wireframe
-- --no-buildings
-- --top-down
+- --config         ✓ (all four scripts)
+- --rebuild-assets → scripts/run_all.py --rebuild
+- --route-speed-kmh → --speed-kmh in 04_run_viewer.py
+- --small-bbox     ✓ (all four scripts)
+- --wireframe      ✓ (04_run_viewer.py)
+- --no-buildings   ✓ (04_run_viewer.py)
+- --top-down       ✓ (04_run_viewer.py)
+- --screenshot     Added to 04_run_viewer.py; P key in viewer
+- --debug          Added to 04_run_viewer.py
 
-3. Add logs for asset loading and render stats.
-4. Add screenshots option.
-5. Add README with setup/run instructions.
+3. Add logs for asset loading and render stats. ✓ (renderer logs at startup)
+4. Add screenshots option. → P key + --screenshot PATH
+5. Add README with setup/run instructions. ✓ (README.md, updated Phase 8)
+
+Also:
+- scripts/run_all.py: orchestrates 01→04 with --rebuild/--no-viewer/--small-bbox
+- Pillow added to requirements.txt for PNG screenshot support
 
 Acceptance criteria:
 

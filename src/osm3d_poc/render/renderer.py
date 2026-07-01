@@ -21,6 +21,7 @@ from .camera import Camera, translate, rotate_y
 from .shaders import FLAT_VERT, FLAT_FRAG, BUILDING_VERT, BUILDING_FRAG
 from .mesh import GpuMesh
 from .marker import make_marker_mesh
+from .screenshot import save_screenshot
 from ..geo.preprocess_roads import polyline_to_strip
 from ..geo.route_builder import load_route
 from ..sim.route_player import RoutePlayer
@@ -84,6 +85,17 @@ class Renderer(mglw.WindowConfig):
             self._camera.cycle_follow_mode()        # orbit → follow_close
         if self._cli_args and getattr(self._cli_args, "top_down", False):
             self._camera.toggle_top_down()
+
+        # Screenshot-on-first-frame path (set by --screenshot flag)
+        self._pending_screenshot: Optional[Path] = None
+        if self._cli_args:
+            sc = getattr(self._cli_args, "screenshot", None)
+            if sc:
+                self._pending_screenshot = Path(sc)
+
+        # Debug mode: log status every 1 s instead of every 5 s
+        self._debug_mode    = bool(self._cli_args and getattr(self._cli_args, "debug", False))
+        self._progress_interval = 1.0 if self._debug_mode else 5.0
 
         # FPS / progress tracking
         self._fps_frames   = 0
@@ -195,16 +207,17 @@ class Renderer(mglw.WindowConfig):
             pos, heading = self._player.get_pose()
             self._camera.set_follow_target(pos, heading)
 
-        # --- Progress log every 5 s (FR-UI-002) ---
+        # --- Progress / debug status log (FR-UI-002) ---
         self._progress_acc += frame_time
-        if self._progress_acc >= 5.0:
+        if self._progress_acc >= self._progress_interval:
             self._progress_acc = 0.0
             if self._player is not None:
                 log.info(
-                    "Route %.0f / %.0f m | %.0f km/h | %s",
+                    "Route %.0f / %.0f m | %.0f km/h | %s | cam: %s",
                     self._player.dist_m, self._player.total_m,
                     self._player.speed_kmh,
                     "PAUSED" if self._player.paused else "running",
+                    self._camera.mode,
                 )
 
         w, h   = self.wnd.size
@@ -237,6 +250,14 @@ class Renderer(mglw.WindowConfig):
             self._flat_prog["mvp"].write(_mvp_bytes(proj @ view @ model))
             self._flat_prog["color"].write(self._marker_color)
             self._marker_mesh.draw()
+
+        # --- Screenshot (pending from --screenshot flag or P key) ---
+        if self._pending_screenshot is not None:
+            w, h = self.wnd.size
+            data = self.ctx.screen.read(viewport=(0, 0, w, h), components=3)
+            path = save_screenshot(data, w, h, self._pending_screenshot)
+            log.info("Screenshot saved: %s", path)
+            self._pending_screenshot = None
 
         # --- FPS / state in window title (every 0.5 s) ---
         self._fps_frames += 1
@@ -277,6 +298,13 @@ class Renderer(mglw.WindowConfig):
         if key == keys.F:
             self._camera.cycle_follow_mode()
             log.info("Camera mode: %s", self._camera.mode)
+            return
+
+        # Screenshot (P key)
+        if key == keys.P:
+            import time as _time
+            self._pending_screenshot = Path(f"screenshot_{int(_time.time())}.png")
+            log.info("Screenshot queued: %s", self._pending_screenshot)
             return
 
         # Simulation controls
