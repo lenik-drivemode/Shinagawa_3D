@@ -81,7 +81,8 @@ render:
   route_color:      [1.00, 0.35, 0.00, 0.70]  # vivid orange-red, 70% opaque
   building_color:   [0.15, 0.25, 0.60, 0.72]  # semi-transparent dark blue
   marker_color:     [0.00, 1.00, 0.50, 1.0]   # bright cyan-green
-  route_strip_width_m: 8.0
+  route_strip_width_m:  8.0
+  route_lane_offset_m:  3.0   # LHT: shift route/marker left of road centreline
   marker_length_m: 8.0
   marker_width_m:  4.0
   marker_height_m: 2.0

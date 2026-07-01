@@ -91,6 +91,7 @@ def polyline_to_strip(
     xz: np.ndarray,
     width: float,
     y: float = 0.0,
+    offset_m: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Convert a 2-D polyline in local XZ to a flat road-strip mesh with miter joins.
 
@@ -154,8 +155,10 @@ def polyline_to_strip(
                 scale = half / max(cos_h, 1.0 / _MAX_MITER)
                 mdir = avg
         x, z = pts[i]
-        verts.append([x + mdir[0] * scale, y, z + mdir[1] * scale])  # left
-        verts.append([x - mdir[0] * scale, y, z - mdir[1] * scale])  # right
+        # offset_m shifts the strip centre left (Japan LHT: positive = left lane)
+        cx, cz = x + mdir[0] * offset_m, z + mdir[1] * offset_m
+        verts.append([cx + mdir[0] * scale, y, cz + mdir[1] * scale])  # left edge
+        verts.append([cx - mdir[0] * scale, y, cz - mdir[1] * scale])  # right edge
 
     # Triangles: CCW from above — (L0, R1, R0) and (L0, L1, R1) per segment.
     idxs: List[int] = []

@@ -177,8 +177,11 @@ class Renderer(mglw.WindowConfig):
             self._route_xyz, self._route_s = load_route(cfg)
             xz      = self._route_xyz[:, [0, 2]]
             route_y = float(self._route_xyz[0, 1])
-            route_w = float(cfg["render"].get("route_strip_width_m", 8.0))
-            route_verts, route_idxs = polyline_to_strip(xz, width=route_w, y=route_y)
+            route_w      = float(cfg["render"].get("route_strip_width_m", 8.0))
+            route_offset = float(cfg["render"].get("route_lane_offset_m", 3.0))
+            route_verts, route_idxs = polyline_to_strip(
+                xz, width=route_w, y=route_y, offset_m=route_offset,
+            )
             if len(route_verts):
                 self._route_mesh = GpuMesh(
                     self.ctx, self._flat_prog,
@@ -223,6 +226,9 @@ class Renderer(mglw.WindowConfig):
         if self._player is not None:
             self._player.update(frame_time)
             pos, heading = self._player.get_pose()
+            # Shift position to the left lane (Japan LHT): left = (-cos h, 0, sin h)
+            lane_off = float(self._cfg["render"].get("route_lane_offset_m", 3.0))
+            pos = pos + np.array([-np.cos(heading), 0.0, np.sin(heading)]) * lane_off
             self._camera.set_follow_target(pos, heading)
 
         # --- Progress / debug status log (FR-UI-002) ---
