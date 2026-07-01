@@ -16,8 +16,9 @@ Validate that a Python + OpenGL stack (OSMnx + ModernGL) can deliver a visually 
 ## Installation
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
+pip install -e .
 pip install -r requirements.txt
 ```
 
@@ -97,6 +98,10 @@ Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright
 - No terrain elevation.
 - No label rendering.
 - No map streaming — one fixed local area only.
+- **In-window text overlay deferred to post-MVP.** Route progress, speed, and
+  camera mode are reported to the console/window title rather than rendered
+  on-screen. FPS is shown in the window title.
+- Developed on Python 3.10; PRD targets 3.11+ but 3.10 is fully compatible.
 
 ## Troubleshooting
 
