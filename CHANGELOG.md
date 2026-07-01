@@ -4,6 +4,22 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-02 — Phase 2: Projection & Local Coordinates
+
+### Added
+- `src/osm3d_poc/geo/projection.py` — centralised WGS84 → UTM 54N → local
+  XZ metre conversion (NFR-MAINT-003); `Projector` class bundles transformer
+  and origin; `batch_to_xz` and `polygon_to_xz` for NumPy array workflows
+- `tests/test_projection.py` — 14 tests: UTM range checks, origin→(0,0),
+  axis sign convention (X east / Z north), plausible distances, batch vs
+  single-point consistency, polygon exterior projection
+
+### Notes
+- pyproj 3.7.1; `always_xy=True` so argument order is always (lon, lat)
+  for geographic input and (easting, northing) for projected output
+- Two pyproj internal DeprecationWarnings on 1-element array input are
+  from pyproj internals, not project code; harmless for now
+
 ## [0.2.0] — 2026-07-02 — Phase 1: Data Acquisition
 
 ### Added
