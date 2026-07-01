@@ -208,7 +208,10 @@ class Camera:
             return look_at(eye, pos, up)
         else:   # follow_aerial
             eye = pos + np.array([0.0, self._aerial_up_m, 0.0])
-            return look_at(eye, pos, up)
+            # up must not be parallel to the view direction (0,-1,0); use vehicle
+            # forward so the map orients with the direction of travel.
+            fwd = np.array([np.sin(h), 0.0, np.cos(h)])
+            return look_at(eye, pos, fwd)
 
     def get_projection_matrix(self, aspect: float) -> np.ndarray:
         """Return 4×4 row-major float32 projection matrix."""

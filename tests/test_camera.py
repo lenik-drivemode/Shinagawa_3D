@@ -264,6 +264,18 @@ def test_camera_pan_drag_changes_target(cfg):
     assert not np.allclose(cam.target, t0)
 
 
+def test_follow_aerial_view_matrix_no_nan(cfg):
+    """follow_aerial looks straight down — up must not be parallel to view dir."""
+    cam = Camera(cfg)
+    cam.cycle_follow_mode()   # orbit → follow_close
+    cam.cycle_follow_mode()   # follow_close → follow_aerial
+    for heading in [0.0, np.pi / 4, np.pi / 2, np.pi]:
+        cam.set_follow_target(np.array([100.0, 0.0, 200.0]), heading=heading)
+        m = cam.get_view_matrix()
+        assert not np.any(np.isnan(m)), f"NaN in aerial view matrix at heading={heading}"
+        assert not np.any(np.isinf(m)), f"Inf in aerial view matrix at heading={heading}"
+
+
 def test_set_follow_target_moves_orbit_target(cfg):
     """Orbit mode must track the vehicle so it stays centred on screen."""
     cam = Camera(cfg)
