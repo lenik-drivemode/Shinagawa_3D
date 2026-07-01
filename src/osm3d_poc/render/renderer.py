@@ -262,11 +262,14 @@ class Renderer(mglw.WindowConfig):
             self._flat_prog["color"].write(self._route_color)
             self._route_mesh.draw()
 
-        # --- Buildings ---
+        # --- Buildings (semi-transparent: blend over already-drawn roads/ground) ---
         if self._building_mesh is not None:
+            self.ctx.enable(moderngl.BLEND)
+            self.ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
             self._building_prog["mvp"].write(_mvp_bytes(vp))
             self._building_prog["color"].write(self._building_color)
             self._building_mesh.draw()
+            self.ctx.disable(moderngl.BLEND)
 
         # --- Animated marker ---
         if self._marker_mesh is not None:

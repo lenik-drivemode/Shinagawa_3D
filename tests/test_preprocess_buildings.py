@@ -182,6 +182,41 @@ def test_extrude_wall_normals_are_unit_length():
     assert np.allclose(lengths, 1.0, atol=1e-5)
 
 
+def _triangle_normal_y(v0, v1, v2):
+    """Return the Y component of (v1-v0) × (v2-v0); positive = front-facing from above."""
+    e1 = v1 - v0
+    e2 = v2 - v0
+    return e1[2] * e2[0] - e1[0] * e2[2]   # Y component of 3D cross product
+
+
+def test_wall_triangles_front_facing_from_outside():
+    """All wall triangles must be CCW when viewed from outside (outward-normal side)."""
+    verts, idxs = _extrude_building(_SQUARE_XZ, height=10.0)
+    wall_verts = verts[:16]
+    wall_idxs  = idxs[:24]   # 4 walls × 2 triangles × 3 indices
+    for tri in wall_idxs.reshape(-1, 3):
+        v0, v1, v2 = [wall_verts[i, :3] for i in tri]
+        stored_nx, stored_nz = wall_verts[tri[0], 3], wall_verts[tri[0], 5]
+        # The cross product of the triangle edges should point in the same
+        # direction as the stored outward normal (positive dot product).
+        cross = np.cross(v1 - v0, v2 - v0)
+        stored_n = np.array([stored_nx, 0.0, stored_nz])
+        assert np.dot(cross, stored_n) > 0, (
+            f"Wall triangle {tri} is back-facing (wrong winding)")
+
+
+def test_roof_triangles_front_facing_from_above():
+    """All roof triangles must be CCW when viewed from above (+Y direction)."""
+    verts, idxs = _extrude_building(_SQUARE_XZ, height=10.0)
+    n_wall_verts = 16
+    roof_verts = verts[n_wall_verts:]
+    roof_idxs  = idxs[24:] - n_wall_verts
+    for tri in roof_idxs.reshape(-1, 3):
+        v0, v1, v2 = [roof_verts[i, :3] for i in tri]
+        ny = _triangle_normal_y(v0, v1, v2)
+        assert ny > 0, f"Roof triangle {tri} has downward normal (wrong winding)"
+
+
 def test_extrude_degenerate_ring_returns_empty():
     xz = np.array([[0.0, 0.0], [1.0, 0.0]])  # only 2 points
     verts, idxs = _extrude_building(xz, height=10.0)

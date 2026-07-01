@@ -193,12 +193,18 @@ def _extrude_building(
             [x0, top_y,  z0, nx, 0.0, nz],
         ]
         b = base_idx
-        all_idxs += [b, b+1, b+2, b, b+2, b+3]
+        # CCW winding viewed from outside (+outward-normal direction):
+        # quad is (bottom-start, bottom-end, top-end, top-start)
+        # → triangles (v0,v2,v1) and (v0,v3,v2)
+        all_idxs += [b, b+2, b+1, b, b+3, b+2]
         base_idx += 4
 
     # --- Roof ---
     roof_idxs = _triangulate_roof(ring)
     if len(roof_idxs) > 0:
+        # earcut triangulates a CCW XZ polygon → triangles have -Y normal.
+        # Reverse each triple to flip to +Y (upward-facing, front from above).
+        roof_idxs = roof_idxs.reshape(-1, 3)[:, ::-1].ravel()
         roof_base = base_idx
         for x, z in ring:
             all_verts.append([x, top_y, z, 0.0, 1.0, 0.0])
