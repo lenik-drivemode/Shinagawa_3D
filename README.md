@@ -57,17 +57,20 @@ Add `--small-bbox` to use a smaller debug area (~0.5 km²) for faster iteration.
 
 ### Option B — step by step
 
+Steps 1–3 only need to run once (or when you change the config/area).
+Step 4 is the only command needed for subsequent launches.
+
 ```bash
 # 1. Download OSM road graph and building footprints (cached after first run)
 python scripts/01_download_osm.py --config config/shinagawa_poc.yaml
 
-# 2. Preprocess into GPU-ready mesh files (.npz)
+# 2. Preprocess into GPU-ready mesh files (roads_mesh.npz, buildings_mesh.npz)
 python scripts/02_preprocess_assets.py --config config/shinagawa_poc.yaml
 
-# 3. Build the route JSON from OSM waypoints
+# 3. Build the route JSON (shinagawa_loop.json)
 python scripts/03_build_route.py --config config/shinagawa_poc.yaml
 
-# 4. Launch the 3D viewer
+# 4. Launch the 3D viewer (this is the only step needed on subsequent runs)
 python scripts/04_run_viewer.py --config config/shinagawa_poc.yaml
 ```
 
@@ -134,7 +137,7 @@ licensed under the [Open Database License](https://opendatacommons.org/licenses/
 **OpenGL context fails to open**
 Check GPU drivers or Mesa version. For a software fallback:
 ```bash
-LIBGL_ALWAYS_SOFTWARE=1 python scripts/04_run_viewer.py
+LIBGL_ALWAYS_SOFTWARE=1 python scripts/04_run_viewer.py --config config/shinagawa_poc.yaml
 ```
 
 **GeoPandas or GDAL install fails**
