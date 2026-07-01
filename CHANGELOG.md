@@ -4,6 +4,22 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-02 — Phase 1: Data Acquisition
+
+### Added
+- `src/osm3d_poc/geo/download_osm.py` — road graph and building footprint
+  acquisition via osmnx 2.x (`bbox=(west, south, east, north)` format);
+  cache detection; initial `metadata.json` writer
+- `scripts/01_download_osm.py` — CLI: `--config`, `--small-bbox`, `--no-cache`
+- `tests/test_download_osm.py` — 16 tests covering bbox extraction, cache
+  path helpers, and metadata structure (no network required)
+
+### Notes
+- osmnx 2.0.7 in use; `bbox` parameter is `(left, bottom, right, top)`
+  = `(west, south, east, north)` — different from osmnx 1.x positional order
+- Deferred fields in metadata.json (vertices, triangles, route length)
+  are written as `null` and filled in by later phases
+
 ## [0.1.0] — 2026-07-02 — Phase 0: Environment Setup
 
 ### Added
