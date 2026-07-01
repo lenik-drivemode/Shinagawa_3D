@@ -121,7 +121,7 @@ class _DemoCubeWindow(mglw.WindowConfig):
         self._fps_frames = 0
         self._fps_acc = 0.0
 
-    def render(self, time: float, frame_time: float):
+    def on_render(self, time: float, frame_time: float):
         self.ctx.clear(0.08, 0.09, 0.10, 1.0)
 
         w, h = self.wnd.size
@@ -143,10 +143,10 @@ class _DemoCubeWindow(mglw.WindowConfig):
             self._fps_frames = 0
             self._fps_acc = 0.0
 
-    def key_event(self, key, action, modifiers):
+    def on_key_event(self, key, action, modifiers):
         if key == self.wnd.keys.ESCAPE and action == self.wnd.keys.ACTION_PRESS:
             self.wnd.close()
 
 
 def run_demo_cube() -> None:
-    mglw.run_window_config(_DemoCubeWindow)
+    mglw.run_window_config(_DemoCubeWindow, args=["--window", "pyglet"])

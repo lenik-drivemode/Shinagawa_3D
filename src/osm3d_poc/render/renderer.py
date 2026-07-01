@@ -196,7 +196,7 @@ class Renderer(mglw.WindowConfig):
     # Per-frame render
     # ------------------------------------------------------------------
 
-    def render(self, time: float, frame_time: float) -> None:
+    def on_render(self, time: float, frame_time: float) -> None:
         self.ctx.clear(*self._bg)
 
         # --- Simulation tick ---
@@ -278,10 +278,10 @@ class Renderer(mglw.WindowConfig):
     # Window / input events
     # ------------------------------------------------------------------
 
-    def resize(self, width: int, height: int) -> None:
+    def on_resize(self, width: int, height: int) -> None:
         self.ctx.viewport = (0, 0, width, height)
 
-    def key_event(self, key, action, modifiers) -> None:
+    def on_key_event(self, key, action, modifiers) -> None:
         keys = self.wnd.keys
         if action != keys.ACTION_PRESS:
             return
@@ -336,13 +336,13 @@ class Renderer(mglw.WindowConfig):
         elif key == keys.D:
             self._camera.move_strafe( move_speed)
 
-    def mouse_drag_event(self, x: int, y: int, dx: int, dy: int) -> None:
+    def on_mouse_drag_event(self, x: int, y: int, dx: int, dy: int) -> None:
         if self.wnd.mouse_states.left:
             self._camera.orbit_drag(dx, dy)
         elif self.wnd.mouse_states.right:
             self._camera.pan_drag(dx, dy)
 
-    def mouse_scroll_event(self, x_offset: float, y_offset: float) -> None:
+    def on_mouse_scroll_event(self, x_offset: float, y_offset: float) -> None:
         self._camera.zoom(y_offset)
 
 
@@ -370,4 +370,8 @@ def _vec4(color) -> bytes:
 def run_viewer(cfg: dict, cli_args=None) -> None:
     """Configure and launch the 3D viewer window."""
     Renderer.configure(cfg, cli_args)
-    mglw.run_window_config(Renderer)
+    # mglw.parse_args does `args or sys.argv[1:]` so an empty list still
+    # falls back to sys.argv.  Pass the only mglw flag we care about
+    # explicitly so our custom flags (--config, --screenshot, etc.) never
+    # reach the mglw parser.
+    mglw.run_window_config(Renderer, args=["--window", "pyglet"])
