@@ -17,6 +17,10 @@ local 3D map with route simulation at 30–60 FPS on a normal laptop.
 - A small coloured cuboid marker that drives along the route and rotates with heading.
 - FPS, camera mode, and speed shown in the window title bar.
 
+## Actual Output
+
+![Shinagawa 3D](images/shinagawa_3d.png)
+
 ## System Requirements
 
 - Linux (primary), Windows or macOS (secondary — untested)
